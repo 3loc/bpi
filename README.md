@@ -34,7 +34,32 @@ pi install ~/src/my-pi
 
 pi registers the repo **by reference, without copying**: this repository is
 the single source of truth. Edits here are picked up by `/reload` or the
-next pi start. Verify with `pi list`.
+next pi start. Verify with `pi list`, or fully with `./verify.sh`.
+
+## Startup & load order
+
+pi reads this repo at startup, **before** actioning your first command:
+
+1. pi starts → reads `~/.pi/agent/settings.json` → `packages` entry
+   points here (path is resolved against the settings file, not cwd,
+   so the repo loads no matter where pi is launched)
+2. Extensions in `extensions/` execute and register commands/keys
+   (extension slash commands are user-facing TUI commands — they are
+   not part of the model's context; skills are)
+3. Skill descriptions from `skills/` are injected into the system prompt
+4. Only then is user input processed
+
+Because of (4), a fresh session can use `/plan` or the `ddgs-websearch`
+skill on its very first command — no preload or `/skill:` invocation
+needed (the full SKILL.md is read on demand when the task matches).
+
+Rules that keep this true:
+
+- Do **not** copy skills from here into `~/.pi/agent/skills/` — pi keeps
+  the first skill found on a name collision, so a stale global copy can
+  silently shadow this repo
+- Edits here apply on the next pi start or `/reload`
+- New machine checklist: clone → `./install.sh` → `./verify.sh`
 
 ## Uninstall
 
