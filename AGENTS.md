@@ -23,10 +23,14 @@ entry is a live link to wherever the repo sits on disk. Consequences:
    files under `~/.pi/agent/extensions/`, `~/.pi/agent/skills/`, or
    `~/.agents/skills/`. Extensions and skills belong in this repo:
    `extensions/<name>/index.ts` and `skills/<name>/SKILL.md`.
-2. **This repo is loaded at startup.** Skills here are already in the
-   system prompt; extension commands are already registered. Nothing
-   needs to be copied anywhere for pi to pick it up — `/reload` or the
-   next start is enough.
+2. **This repo is loaded at startup — once installed.** The rule
+   holds only while the repo is registered in `~/.pi/agent/settings.json`
+   (done by `./install.sh`). If not installed (e.g. a fresh clone on a
+   new machine), pi loads nothing from here: run `./install.sh` and
+   `./verify.sh` first — do not work around it by copying files to
+   global locations. When registered, skills here are already in the
+   system prompt and extension commands are already registered;
+   `/reload` or the next start is enough to pick up changes.
 3. **Verify changes with `./verify.sh`** (add a check when adding a new
    extension or skill). It must pass before committing.
 
