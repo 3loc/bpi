@@ -5,6 +5,7 @@
   "description": "Personal pi extensions: plan mode and future additions",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
   }
 }

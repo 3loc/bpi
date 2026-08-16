@@ -15,6 +15,12 @@ command -v pi >/dev/null 2>&1 || {
 	exit 1
 }
 
+# Optional runtime dependency: ddgs CLI (skills/ddgs-websearch)
+if ! command -v ddgs >/dev/null 2>&1; then
+	echo "warning: 'ddgs' not found on PATH — the ddgs-websearch skill needs it"
+	echo "         install with: pip install ddgs (or pipx/uv tool install ddgs)"
+fi
+
 pi install "$REPO_ROOT"
 
 echo

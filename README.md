@@ -1,12 +1,20 @@
 # my-pi
 
-My personal [pi](https://pi.dev) extensions, persisted as a pi package.
+My personal [pi](https://pi.dev) extensions and skills, persisted as a pi package.
 
 ## Contents
+
+### Extensions
 
 | Extension | Provides |
 |-----------|----------|
 | [`extensions/plan-mode`](extensions/plan-mode/README.md) | `/plan`, `/todos`, `Ctrl+Alt+P`, `pi --plan` — three-phase plan workflow (read-only planning → tracked execution with `[DONE:n]` progress) |
+
+### Skills
+
+| Skill | Provides |
+|-------|----------|
+| [`skills/ddgs-websearch`](skills/ddgs-websearch/SKILL.md) | Web/news/image/video/book search and URL content extraction via the `ddgs` CLI (no API keys). Loads automatically when a task needs fresh web info; also usable as `/skill:ddgs-websearch`. Requires `ddgs` on PATH |
 
 ## Install
 
@@ -48,6 +56,12 @@ next pi start. Verify with `pi list`.
 
    (or a single `extensions/<name>.ts` file — both shapes are discovered)
 
+2. Restart pi or run `/reload`.
+
+## Adding a new skill
+
+1. Create `skills/<name>/SKILL.md` with frontmatter (`name`,
+   `description`) — see `skills/ddgs-websearch/SKILL.md` for an example.
 2. Restart pi or run `/reload`.
 
 ## Notes
