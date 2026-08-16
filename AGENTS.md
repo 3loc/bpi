@@ -4,6 +4,19 @@ This repository (`my-pi`) is a **pi package**: it is the single source of
 truth for this machine's pi extensions and skills. It is registered in
 `~/.pi/agent/settings.json` under `packages` and loaded by reference.
 
+How the registration works: `pi install` (run by `./install.sh`) stores
+the repo as a path **relative to the settings file's directory**
+(`~/.pi/agent/`), e.g. `"../../src/my-pi"` — pi resolves it to the
+absolute repo path at every startup. Nothing is copied; the settings
+entry is a live link to wherever the repo sits on disk. Consequences:
+
+- Moving or renaming the repo (or its parents) silently breaks the
+  link — `pi list` then shows a stale path. After relocating or
+  freshly cloning, re-run `./install.sh` from the new location (it
+  overwrites the entry), then `./verify.sh`.
+- `verify.sh` check 1 greps `pi list` for this checkout's absolute
+  path, so it fails loudly when the link points elsewhere.
+
 ## Hard rules
 
 1. **Never install pi customizations globally.** Do not create or edit

@@ -36,6 +36,12 @@ pi registers the repo **by reference, without copying**: this repository is
 the single source of truth. Edits here are picked up by `/reload` or the
 next pi start. Verify with `pi list`, or fully with `./verify.sh`.
 
+The settings entry is a path **relative to the settings file's directory**
+(e.g. `"../../src/my-pi"`), resolved to the absolute repo path at every
+startup — a live link to wherever the repo sits on disk. If the repo is
+moved or re-cloned elsewhere, re-run `./install.sh` from the new location.
+See `AGENTS.md` for the full implications.
+
 ## Local context layering
 
 Two layers guarantee pi is context-aware about the local directory
