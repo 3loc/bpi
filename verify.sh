@@ -35,9 +35,15 @@ fi
 
 # Check 2: extensions executed at startup
 if pi --help 2>&1 | grep -q -- "--plan"; then
-	echo "ok: extensions loaded at startup (--plan flag present)"
+	echo "ok: plan-mode extension loaded (--plan flag present)"
 else
 	echo "FAIL: plan-mode extension did not load (no --plan flag)" >&2
+	exit 1
+fi
+if pi --help 2>&1 | grep -q -- "--local-context"; then
+	echo "ok: local-context extension loaded (--local-context flag present)"
+else
+	echo "FAIL: local-context extension did not load (no --local-context flag)" >&2
 	exit 1
 fi
 

@@ -9,13 +9,13 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 | Extension | Provides |
 |-----------|----------|
 | [`extensions/plan-mode`](extensions/plan-mode/README.md) | `/plan`, `/todos`, `Ctrl+Alt+P`, `pi --plan` — three-phase plan workflow (read-only planning → tracked execution with `[DONE:n]` progress) |
+| [`extensions/local-context`](extensions/local-context/index.ts) | Guarantees a local-directory snapshot (listing, README head, package.json, git state) enters the system prompt before each user command — but **only when no project `AGENTS.md`/`CLAUDE.md` exists in cwd or git root** (native context loading wins) |
 
 ### Skills
 
 | Skill | Provides |
 |-------|----------|
 | [`skills/ddgs-websearch`](skills/ddgs-websearch/SKILL.md) | Web/news/image/video/book search and URL content extraction via the `ddgs` CLI (no API keys). Loads automatically when a task needs fresh web info; also usable as `/skill:ddgs-websearch`. Requires `ddgs` on PATH |
-
 ## Install
 
 ```bash
@@ -35,6 +35,26 @@ pi install ~/src/my-pi
 pi registers the repo **by reference, without copying**: this repository is
 the single source of truth. Edits here are picked up by `/reload` or the
 next pi start. Verify with `pi list`, or fully with `./verify.sh`.
+
+## Local context layering
+
+Two layers guarantee pi is context-aware about the local directory
+before actioning commands:
+
+1. **Native (always on):** `AGENTS.md` in the project root — pi loads
+   it (and `CLAUDE.md` / `AGENTS.override.md`) from cwd and parent
+   directories at startup. This repo carries its own `AGENTS.md` with
+   the project rules.
+2. **Fallback (`extensions/local-context`):** for directories WITHOUT
+   a project context file, the extension appends a directory snapshot
+   (entries, README head, package.json summary, git branch/status/log)
+   to the system prompt on every user prompt. It deliberately backs
+   off when an `AGENTS.md`/`CLAUDE.md` exists in the cwd or git root,
+   or when pi already loaded a context file from within the project —
+   native context is richer and duplication only burns tokens.
+
+Debug the fallback with `PI_LOCAL_CONTEXT_DEBUG=1` (decision + injected
+block on stderr). Disable per run with `--local-context=false`.
 
 ## Startup & load order
 
