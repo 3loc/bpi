@@ -27,4 +27,6 @@ echo
 echo "Installed: $REPO_ROOT"
 echo "Resources:"
 echo "  extensions/plan-mode  ->  /plan, /todos, Ctrl+Alt+P, pi --plan"
+echo "  skills/ddgs-websearch  ->  web/news/image/video/book search + URL"
+echo "                            extraction via ddgs (/skill:ddgs-websearch)"
 echo "Run 'pi list' to verify, or /reload inside a running session."

@@ -68,5 +68,11 @@ next pi start. Verify with `pi list`.
 
 - Peer imports (`@earendil-works/pi-coding-agent`, `pi-ai`, `pi-tui`,
   `typebox`) are bundled with pi itself — no `npm install` needed.
-- Prefer moving extensions here over dropping files into
-  `~/.pi/agent/extensions/`, so everything is versioned in one place.
+- Skills are plain markdown (`SKILL.md` + frontmatter), so this package
+  has no npm dependencies at all.
+- `skills/ddgs-websearch` needs the external `ddgs` CLI at runtime
+  (`pip install ddgs`); it self-installs via the Setup section in its
+  SKILL.md when missing.
+- Prefer moving extensions and skills here over dropping files into
+  `~/.pi/agent/extensions/` or `~/.pi/agent/skills/`, so everything is
+  versioned in one place.
