@@ -54,6 +54,12 @@ else
 	echo "FAIL: sessions extension did not load (no --sessions flag)" >&2
 	exit 1
 fi
+if pi --help 2>&1 | grep -q -- "--modes"; then
+	echo "ok: mode extension loaded (--modes flag present)"
+else
+	echo "FAIL: mode extension did not load (no --modes flag)" >&2
+	exit 1
+fi
 
 # Check 2b: extension command runs headless (no LLM call)
 if pi --no-session -p "/sessions" 2>&1 | grep -qi "session"; then
