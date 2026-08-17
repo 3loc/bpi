@@ -8,7 +8,9 @@
 #                    only shows if the extension ran. (Extension slash
 #                    commands like /plan are user-facing TUI commands
 #                    and are NOT visible to the model, so we check the
-#                    CLI flag instead of asking the model.)
+# Check 2b (offline): a headless /sessions invocation prints the
+#                    session list — proving the command is registered
+#                    and functional, without any LLM call.
 # Check 3 (probe):   a fresh non-interactive pi session launched from
 #                    an unrelated cwd must already see the repo's
 #                    skills — proving they entered the system prompt
@@ -44,6 +46,20 @@ if pi --help 2>&1 | grep -q -- "--local-context"; then
 	echo "ok: local-context extension loaded (--local-context flag present)"
 else
 	echo "FAIL: local-context extension did not load (no --local-context flag)" >&2
+	exit 1
+fi
+if pi --help 2>&1 | grep -q -- "--sessions"; then
+	echo "ok: sessions extension loaded (--sessions flag present)"
+else
+	echo "FAIL: sessions extension did not load (no --sessions flag)" >&2
+	exit 1
+fi
+
+# Check 2b: extension command runs headless (no LLM call)
+if pi --no-session -p "/sessions" 2>&1 | grep -qi "session"; then
+	echo "ok: sessions command runs headless (pi -p \"/sessions\")"
+else
+	echo "FAIL: sessions command produced no output" >&2
 	exit 1
 fi
 
