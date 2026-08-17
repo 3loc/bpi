@@ -36,10 +36,10 @@ else
 fi
 
 # Check 2: extensions executed at startup
-if pi --help 2>&1 | grep -q -- "--plan"; then
-	echo "ok: plan-mode extension loaded (--plan flag present)"
+if pi --help 2>&1 | grep -q -- "--workflow"; then
+	echo "ok: workflow-mode extension loaded (--workflow flag present)"
 else
-	echo "FAIL: plan-mode extension did not load (no --plan flag)" >&2
+	echo "FAIL: workflow-mode extension did not load (no --workflow flag)" >&2
 	exit 1
 fi
 if pi --help 2>&1 | grep -q -- "--local-context"; then
