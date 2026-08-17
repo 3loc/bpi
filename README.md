@@ -8,7 +8,7 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 
 | Extension | Provides |
 |-----------|----------|
-| [`extensions/plan-mode`](extensions/plan-mode/README.md) | `/plan`, `/todos`, `Ctrl+Alt+P`, `pi --plan` — three-phase plan workflow (read-only planning → tracked execution with `[DONE:n]` progress) |
+| [`extensions/plan-mode`](extensions/plan-mode/README.md) | `/plan`, `/todos`, `Ctrl+Alt+P`, `pi --plan` — manager-driven plan workflow (read-only planning → step-by-step execution with auto-advance, pause/resume, `[DONE:n]`/`[BLOCKED:n]` tracking) |
 | [`extensions/local-context`](extensions/local-context/index.ts) | Guarantees a local-directory snapshot (listing, README head, package.json, git state) enters the system prompt before each user command — but **only when no project `AGENTS.md`/`CLAUDE.md` exists in cwd or git root** (native context loading wins) |
 
 ### Skills

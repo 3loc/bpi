@@ -1,26 +1,47 @@
 /**
- * Plan mode extension for the pi coding agent.
+ * Plan mode extension for the pi coding agent — manager-driven edition.
  *
- * Three phases:
+ * Adapted from the supervision patterns of pi-herdr-agents: the extension,
+ * not the model, owns the workflow. The model executes ONE step per
+ * directive; the manager treats every settled agent run as a checkpoint
+ * and decides what happens next:
+ *
  *   idle      — normal operation, full tool access
  *   planning  — read-only exploration (edit/write disabled, bash allowlisted)
- *   executing — full tool access, plan steps tracked via [DONE:n] markers
+ *   executing — manager drives step-by-step execution with auto-advance
+ *   paused    — execution halted (user interrupt, [BLOCKED:n], model error,
+ *               or repeated runs without progress); /plan run resumes
+ *
+ * Why a manager: a model left to execute a whole checklist in one run
+ * reliably stalls after the first step. Here a stalled run is recovered —
+ * when the agent settles with steps remaining and nothing abnormal
+ * happened, the manager itself sends the next step directive. Guardrails
+ * borrowed from pi-herdr-agents:
+ *
+ *   - directives are self-contained (the wake-up carries the work, not a
+ *     pointer to a file)
+ *   - explicit terminal states with a claim-once gate (exactly one
+ *     completion delivery, no double-firing)
+ *   - pause on user abort — the manager never fights the user
+ *   - no time-based watchdog: progress is accounted per settled run, so
+ *     long legitimate tool runs are never marked "stalled"
+ *   - bounded patience: N consecutive runs without a [DONE:n] marker
+ *     pause the plan instead of burning tokens forever
  *
  * Commands:
- *   /plan               toggle plan mode on/off
- *   /plan run           execute the current plan
- *   /plan show          print the current plan
- *   /plan save [file]   write the plan to a markdown file (default PLAN.md)
+ *   /plan               toggle plan mode on/off (back to planning)
+ *   /plan run           start / resume managed execution
+ *   /plan pause         halt auto-advance (resumable with /plan run)
+ *   /plan show          print the current plan and progress
+ *   /plan save [file]   write the plan to markdown (default PLAN.md)
  *   /plan reset         discard the plan and return to normal mode
  *   /todos              show plan progress
  *
  * Also: Ctrl+Alt+P toggles plan mode, and `pi --plan` starts in plan mode.
- *
- * After each planning turn that produces a "Plan:" section, the user is
- * prompted to execute / keep exploring / refine. When execution starts,
- * the checklist is written to PLAN.md and progress is shown in the footer
- * status and a widget above the editor. State is persisted to the session
- * so it survives /resume and restarts.
+ * During planning, a drafted "Plan:" section offers Execute / Stay / Refine.
+ * Progress shows in the footer status and a checklist widget. State is
+ * persisted to the session and rebuilt on /resume (restored runs come back
+ * paused — the manager never auto-starts a turn at session start).
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -30,6 +51,8 @@ import { Key } from "@earendil-works/pi-tui";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
+	buildStepDirective,
+	extractBlockedSteps,
 	extractPlanSteps,
 	isReadOnlyCommand,
 	markCompletedSteps,
@@ -46,12 +69,20 @@ const MANAGED_TOOLS = new Set([...READONLY_TOOLS, ...FULL_TOOLS]);
 
 const DEFAULT_PLAN_FILE = "PLAN.md";
 
+/** Consecutive settled runs without a [DONE:n] marker before pausing. */
+const MAX_NO_PROGRESS = 3;
+/** Step directives kept in LLM context (older ones are pruned). */
+const KEEP_STEP_DIRECTIVES = 3;
+
 // Custom message types (also used to prune stale context, see "context" handler)
 const PLANNING_CONTEXT_TYPE = "plan-mode-planning";
 const EXECUTING_CONTEXT_TYPE = "plan-mode-executing";
-const KICKOFF_MESSAGE_TYPE = "plan-mode-kickoff";
+const STEP_MESSAGE_TYPE = "plan-manager-step";
 const COMPLETE_MESSAGE_TYPE = "plan-mode-complete";
 const STATE_ENTRY_TYPE = "plan-mode-state";
+// Legacy kickoff type from the pre-manager implementation; still recognized
+// when rebuilding progress from old sessions.
+const LEGACY_KICKOFF_TYPE = "plan-mode-kickoff";
 
 const PLANNING_BRIEF = `[PLAN MODE ACTIVE]
 You are in plan mode — a read-only exploration mode.
@@ -74,12 +105,34 @@ Rules for the plan:
 - Keep each step to a single sentence
 - If requirements are unclear, ask clarifying questions in chat first`;
 
-type Phase = "idle" | "planning" | "executing";
+const EXECUTING_BRIEF = `[PLAN EXECUTION ACTIVE]
+You are executing an approved plan, managed step-by-step by the plan
+manager. Full tool access is enabled.
+
+- Work ONLY on the step named in the most recent [plan-manager] message.
+- When that step is verifiably complete, end your reply with [DONE:n] on
+  its own line, then stop. The manager sends the next step automatically.
+- If the step is wrong or impossible, end with [BLOCKED:n] <reason>.
+- Do not edit ${DEFAULT_PLAN_FILE} — the manager owns that file.`;
+
+type Phase = "idle" | "planning" | "executing" | "paused";
 
 interface PlanModeState {
 	phase: Phase;
 	todos: TodoItem[];
 	toolsBeforePlanMode?: string[];
+}
+
+/** Runtime bookkeeping for one managed execution (not persisted). */
+interface RunControl {
+	lastCompleted: number;
+	noProgress: number;
+	terminal: boolean;
+	blocked?: { step: number; reason: string };
+}
+
+function freshRun(completed: number): RunControl {
+	return { lastCompleted: completed, noProgress: 0, terminal: false };
 }
 
 function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
@@ -105,6 +158,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let phase: Phase = "idle";
 	let todos: TodoItem[] = [];
 	let toolsBeforePlanMode: string[] | undefined;
+	let run = freshRun(0);
+	let lastStopReason: AssistantMessage["stopReason"] | undefined;
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -151,20 +206,25 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	}
 
 	function updateStatus(ctx: ExtensionContext): void {
-		if (phase === "executing" && todos.length > 0) {
+		if ((phase === "executing" || phase === "paused") && todos.length > 0) {
 			const completed = todos.filter((item) => item.completed).length;
-			ctx.ui.setStatus(
-				"plan-mode",
-				ctx.ui.theme.fg("accent", `▶ plan ${completed}/${todos.length}`),
-			);
+			const next = todos.find((item) => !item.completed)?.step;
+			const color = phase === "executing" ? "accent" : "warning";
+			const glyph = phase === "executing" ? "▶" : "⏸";
+			const suffix = phase === "paused" ? " paused" : "";
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg(color, `${glyph} plan ${completed}/${todos.length}${suffix}`));
 			ctx.ui.setWidget(
 				"plan-mode",
-				todos.map((item) =>
-					item.completed
-						? ctx.ui.theme.fg("success", "☑ ") +
+				todos.map((item) => {
+					if (item.completed) {
+						return (
+							ctx.ui.theme.fg("success", "☑ ") +
 							ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
-						: ctx.ui.theme.fg("muted", "☐ ") + item.text,
-				),
+						);
+					}
+					const marker = phase === "executing" && item.step === next ? "▶ " : "☐ ";
+					return ctx.ui.theme.fg("muted", marker) + item.text;
+				}),
 			);
 			return;
 		}
@@ -177,7 +237,93 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		ctx.ui.setWidget("plan-mode", undefined);
 	}
 
-	// ---- Actions ------------------------------------------------------------
+	// ---- Manager actions ----------------------------------------------------
+
+	/**
+	 * Send the directive for the next incomplete step. Self-contained by
+	 * design: the message carries the step, the remaining plan, and the
+	 * completion contract, so the model never has to go looking for work.
+	 */
+	function sendStepDirective(ctx: ExtensionContext): void {
+		const note =
+			run.noProgress > 0
+				? "previous run(s) ended without a [DONE:n] marker — emit the marker as soon as the step is verifiably done"
+				: undefined;
+		const directive = buildStepDirective(todos, { note });
+		if (directive === null) return;
+		pi.sendMessage(
+			{ customType: STEP_MESSAGE_TYPE, content: directive, display: true },
+			{ triggerTurn: true, deliverAs: "followUp" },
+		);
+	}
+
+	function pauseExecution(ctx: ExtensionContext, reason: string): void {
+		if (phase !== "executing") return;
+		phase = "paused";
+		updateStatus(ctx);
+		persist();
+		ctx.ui.notify(`Plan paused: ${reason}`, "warning");
+	}
+
+	async function writePlanFile(ctx: ExtensionContext): Promise<void> {
+		try {
+			await writeFile(join(ctx.cwd, DEFAULT_PLAN_FILE), renderPlanMarkdown(todos), "utf8");
+		} catch {
+			// Non-fatal: execution can proceed without the file.
+			ctx.ui.notify(`Note: could not write ${DEFAULT_PLAN_FILE}`, "warning");
+		}
+	}
+
+	async function beginExecution(ctx: ExtensionContext): Promise<void> {
+		if (todos.length === 0) {
+			ctx.ui.notify("No plan to execute. Draft one in plan mode first (/plan).", "warning");
+			return;
+		}
+		if (todos.every((item) => item.completed)) {
+			ctx.ui.notify("All steps are already complete. Use /plan reset to clear.", "info");
+			return;
+		}
+		if (phase === "executing") {
+			showPlan(ctx);
+			return;
+		}
+
+		const resuming = phase === "paused";
+		phase = "executing";
+		run = freshRun(todos.filter((item) => item.completed).length);
+		lastStopReason = undefined;
+		restoreFullTools();
+		updateStatus(ctx);
+		persist();
+		await writePlanFile(ctx);
+		ctx.ui.notify(
+			resuming
+				? `Resuming plan — manager auto-advances ${todos.filter((item) => !item.completed).length} remaining step(s). /plan pause halts.`
+				: `Executing plan — manager sends one step at a time and auto-advances. /plan pause halts.`,
+			"info",
+		);
+		sendStepDirective(ctx);
+	}
+
+	function finishPlan(ctx: ExtensionContext): void {
+		run.terminal = true; // claim-once: exactly one completion delivery
+		const summary = todos.map((item) => `- [x] ${item.step}. ${item.text}`).join("\n");
+		pi.sendMessage(
+			{
+				customType: COMPLETE_MESSAGE_TYPE,
+				content: `**Plan complete — all ${todos.length} steps done.**\n\n${summary}`,
+				display: true,
+			},
+			{ triggerTurn: false },
+		);
+		phase = "idle";
+		todos = [];
+		run = freshRun(0);
+		updateStatus(ctx);
+		persist();
+	}
+
+	// ---- Phase transitions ----------------------------------------------------
 
 	function togglePlanMode(ctx: ExtensionContext): void {
 		if (phase === "planning") {
@@ -185,8 +331,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			restoreFullTools();
 			ctx.ui.notify("Plan mode off — full tool access restored.", "info");
 		} else {
-			// From idle, or from executing (abandon execution, keep the draft).
+			// From idle, or from executing/paused (abandon execution, keep the draft).
 			phase = "planning";
+			run = freshRun(0);
 			enablePlanTools();
 			ctx.ui.notify(
 				"Plan mode on — read-only exploration. edit/write disabled, bash limited to read-only commands.",
@@ -200,6 +347,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function resetPlan(ctx: ExtensionContext): void {
 		phase = "idle";
 		todos = [];
+		run = freshRun(0);
 		restoreFullTools();
 		updateStatus(ctx);
 		persist();
@@ -232,59 +380,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
-	async function beginExecution(ctx: ExtensionContext): Promise<void> {
-		if (todos.length === 0) {
-			ctx.ui.notify("No plan to execute. Draft one in plan mode first (/plan).", "warning");
-			return;
-		}
-		if (todos.every((item) => item.completed)) {
-			ctx.ui.notify("All steps are already complete. Use /plan reset to clear.", "info");
-			return;
-		}
-		if (phase === "executing") {
-			showPlan(ctx);
-			return;
-		}
-
-		phase = "executing";
-		restoreFullTools();
-		updateStatus(ctx);
-		persist();
-
-		// Persist the checklist as a file (pi philosophy: plans live in files).
-		try {
-			await writeFile(join(ctx.cwd, DEFAULT_PLAN_FILE), renderPlanMarkdown(todos), "utf8");
-		} catch {
-			// Non-fatal: execution can proceed without the file.
-			ctx.ui.notify(`Note: could not write ${DEFAULT_PLAN_FILE}`, "warning");
-		}
-
-		const completed = todos.filter((item) => item.completed).length;
-		const remaining = todos.filter((item) => !item.completed);
-		const remainingList = remaining.map((item) => `${item.step}. ${item.text}`).join("\n");
-		const first = remaining[0];
-		pi.sendMessage(
-			{
-				customType: KICKOFF_MESSAGE_TYPE,
-				content: `Executing the plan (${completed}/${todos.length} complete). See ${DEFAULT_PLAN_FILE} for the full checklist.
-
-Remaining steps:
-${remainingList}
-
-Start with step ${first.step}: ${first.text}
-Immediately after completing step n, include the marker [DONE:n] in your response.`,
-				display: true,
-			},
-			{ triggerTurn: true, deliverAs: "followUp" },
-		);
-	}
-
 	// ---- Commands, shortcut, flag -------------------------------------------
 
-	const SUBCOMMANDS = ["run", "show", "save", "reset"];
+	const SUBCOMMANDS = ["run", "pause", "show", "save", "reset"];
 
 	pi.registerCommand("plan", {
-		description: "Plan mode: /plan [run|show|save <file>|reset]",
+		description: "Plan mode: /plan [run|pause|show|save <file>|reset]",
 		getArgumentCompletions: (prefix: string) => {
 			const items = SUBCOMMANDS.filter((sub) => sub.startsWith(prefix)).map((sub) => ({
 				value: sub,
@@ -301,6 +402,13 @@ Immediately after completing step n, include the marker [DONE:n] in your respons
 				case "run":
 					await beginExecution(ctx);
 					break;
+				case "pause":
+					if (phase === "executing") {
+						pauseExecution(ctx, "paused by user — /plan run resumes");
+					} else {
+						ctx.ui.notify("No execution running.", "info");
+					}
+					break;
 				case "show":
 					showPlan(ctx);
 					break;
@@ -312,7 +420,7 @@ Immediately after completing step n, include the marker [DONE:n] in your respons
 					break;
 				default:
 					ctx.ui.notify(
-						`Unknown subcommand "${sub}". Usage: /plan [run|show|save <file>|reset]`,
+						`Unknown subcommand "${sub}". Usage: /plan [run|pause|show|save <file>|reset]`,
 						"warning",
 					);
 			}
@@ -354,16 +462,20 @@ Immediately after completing step n, include the marker [DONE:n] in your respons
 
 	// ---- Context management ----------------------------------------------------
 
-	// Keep exactly one fresh phase briefing in the LLM context and drop the
-	// other phase's stale briefings.
+	// Keep exactly one fresh phase briefing in the LLM context, drop the
+	// other phase's stale briefings, and keep only the most recent step
+	// directives (they are compact history; the latest names the work).
 	pi.on("context", async (event) => {
 		const messages = event.messages;
 		const lastPlanning = messages.findLastIndex((m) => customTypeOf(m) === PLANNING_CONTEXT_TYPE);
 		const lastExecuting = messages.findLastIndex((m) => customTypeOf(m) === EXECUTING_CONTEXT_TYPE);
+		const lastStep = messages.findLastIndex((m) => customTypeOf(m) === STEP_MESSAGE_TYPE);
+		const managing = phase === "executing" || phase === "paused";
 		const filtered = messages.filter((message, index) => {
 			const type = customTypeOf(message);
 			if (type === PLANNING_CONTEXT_TYPE) return phase === "planning" && index === lastPlanning;
 			if (type === EXECUTING_CONTEXT_TYPE) return phase === "executing" && index === lastExecuting;
+			if (type === STEP_MESSAGE_TYPE) return managing && lastStep - index < KEEP_STEP_DIRECTIVES;
 			return true;
 		});
 		if (filtered.length !== messages.length) {
@@ -377,20 +489,9 @@ Immediately after completing step n, include the marker [DONE:n] in your respons
 				message: { customType: PLANNING_CONTEXT_TYPE, content: PLANNING_BRIEF, display: false },
 			};
 		}
-		if (phase === "executing" && todos.length > 0) {
-			const remaining = todos.filter((item) => !item.completed);
-			if (remaining.length === 0) return;
-			const content = `[PLAN EXECUTION ACTIVE]
-You are executing an approved plan. Full tool access is enabled.
-
-Remaining steps:
-${remaining.map((item) => `${item.step}. ${item.text}`).join("\n")}
-
-Work through the steps in order. Immediately after completing step n, include
-the marker [DONE:n] in your response so progress is tracked. If a step turns
-out to be wrong or impossible, stop and explain why.`;
+		if (phase === "executing") {
 			return {
-				message: { customType: EXECUTING_CONTEXT_TYPE, content, display: false },
+				message: { customType: EXECUTING_CONTEXT_TYPE, content: EXECUTING_BRIEF, display: false },
 			};
 		}
 	});
@@ -398,37 +499,86 @@ out to be wrong or impossible, stop and explain why.`;
 	// ---- Progress tracking ------------------------------------------------------
 
 	pi.on("turn_end", async (event, ctx) => {
-		if (phase !== "executing" || todos.length === 0) return;
-		if (!isAssistantMessage(event.message)) return;
-		if (markCompletedSteps(getTextContent(event.message), todos) > 0) {
-			updateStatus(ctx);
+		if (isAssistantMessage(event.message)) {
+			lastStopReason = event.message.stopReason;
 		}
-		persist();
+		if (phase !== "executing" || !isAssistantMessage(event.message)) return;
+		const text = getTextContent(event.message);
+		let changed = markCompletedSteps(text, todos) > 0;
+		const blocked = extractBlockedSteps(text)[0];
+		if (blocked && run.blocked === undefined) {
+			run.blocked = blocked;
+			changed = true;
+		}
+		if (changed) {
+			await writePlanFile(ctx);
+			updateStatus(ctx);
+			persist();
+		}
 	});
 
-	pi.on("agent_end", async (event, ctx) => {
-		// Execution complete?
-		if (phase === "executing" && todos.length > 0) {
-			if (todos.every((item) => item.completed)) {
-				const summary = todos
-					.map((item) => `- [x] ${item.step}. ${item.text}`)
-					.join("\n");
-				pi.sendMessage(
-					{
-						customType: COMPLETE_MESSAGE_TYPE,
-						content: `**Plan complete — all ${todos.length} steps done.**\n\n${summary}`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				phase = "idle";
-				todos = [];
-				updateStatus(ctx);
-				persist();
-			}
+	// ---- The manager tick ---------------------------------------------------
+
+	// agent_settled fires once per user-visible run, after automatic retries,
+	// compaction retries, and queued follow-ups have drained. That is the
+	// honest "the run truly stopped" checkpoint — exactly where a stalled
+	// execution must be recovered instead of abandoned.
+	pi.on("agent_settled", async (_event, ctx) => {
+		if (phase !== "executing" || todos.length === 0 || run.terminal) return;
+
+		// Something the model (or user) reported that needs a human:
+		if (run.blocked) {
+			const { step, reason } = run.blocked;
+			pauseExecution(
+				ctx,
+				`step ${step} reported blocked (${reason || "no reason given"}) — refine with /plan or retry with /plan run`,
+			);
+			return;
+		}
+		// Never fight the user: an explicit interrupt pauses the plan.
+		if (lastStopReason === "aborted") {
+			pauseExecution(ctx, "run interrupted — /plan run resumes from the next incomplete step");
+			return;
+		}
+		// Provider errors are explicit evidence; retries already happened.
+		if (lastStopReason === "error") {
+			pauseExecution(ctx, "model error ended the run — /plan run retries the current step");
 			return;
 		}
 
+		const completed = todos.filter((item) => item.completed).length;
+		if (completed === todos.length) {
+			await writePlanFile(ctx);
+			finishPlan(ctx);
+			return;
+		}
+
+		// Progress accounting: no time-based watchdog, only per-run deltas,
+		// so long legitimate tool runs are never falsely "stalled".
+		if (completed === run.lastCompleted) {
+			run.noProgress++;
+		} else {
+			run.noProgress = 0;
+			run.lastCompleted = completed;
+		}
+		if (run.noProgress >= MAX_NO_PROGRESS) {
+			pauseExecution(
+				ctx,
+				`${MAX_NO_PROGRESS} runs in a row ended without a [DONE:n] marker — inspect the transcript, then /plan run to continue or /plan reset to discard`,
+			);
+			return;
+		}
+
+		// Steps remain and the run ended normally — this is the recovery
+		// path for "the model just stopped": advance to the next step.
+		persist();
+		updateStatus(ctx);
+		sendStepDirective(ctx);
+	});
+
+	// ---- Draft capture during planning -------------------------------------------
+
+	pi.on("agent_end", async (event, ctx) => {
 		if (phase !== "planning") return;
 
 		// Extract a freshly drafted plan from the last assistant message.
@@ -444,7 +594,7 @@ out to be wrong or impossible, stop and explain why.`;
 		updateStatus(ctx);
 
 		if (!ctx.hasUI) return;
-		const EXECUTE = "Execute the plan (track progress)";
+		const EXECUTE = "Execute the plan (manager advances steps automatically)";
 		const STAY = "Stay in plan mode";
 		const REFINE = "Refine the plan";
 		const choice = await ctx.ui.select("Plan drafted — what next?", [EXECUTE, STAY, REFINE]);
@@ -478,11 +628,14 @@ out to be wrong or impossible, stop and explain why.`;
 		}
 
 		// On resume mid-execution, rebuild completion state by re-scanning
-		// assistant messages after the latest kickoff marker.
-		if (stateEntry !== undefined && phase === "executing" && todos.length > 0) {
+		// assistant messages after the latest step directive (or legacy
+		// kickoff marker), then come back paused: the manager never
+		// auto-starts a turn at session start.
+		if (stateEntry !== undefined && (phase === "executing" || phase === "paused") && todos.length > 0) {
 			let kickoffIndex = -1;
 			for (let i = entries.length - 1; i >= 0; i--) {
-				if ((entries[i] as { customType?: string }).customType === KICKOFF_MESSAGE_TYPE) {
+				const type = (entries[i] as { customType?: string }).customType;
+				if (type === STEP_MESSAGE_TYPE || type === LEGACY_KICKOFF_TYPE) {
 					kickoffIndex = i;
 					break;
 				}
@@ -496,6 +649,10 @@ out to be wrong or impossible, stop and explain why.`;
 				}
 			}
 			markCompletedSteps(messages.map(getTextContent).join("\n"), todos);
+			if (phase === "executing") {
+				phase = "paused";
+				ctx.ui.notify("Restored mid-execution — /plan run resumes, /plan show for progress.", "info");
+			}
 			persist();
 		}
 

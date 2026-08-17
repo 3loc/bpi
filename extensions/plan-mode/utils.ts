@@ -170,6 +170,57 @@ export function extractDoneSteps(text: string): number[] {
 	return steps;
 }
 
+/** A `[BLOCKED:n] <reason>` report from the model. */
+export interface BlockedStep {
+	step: number;
+	reason: string;
+}
+
+/** Collect `[BLOCKED:n] <reason>` reports from assistant text. */
+export function extractBlockedSteps(text: string): BlockedStep[] {
+	const blocked: BlockedStep[] = [];
+	for (const match of text.matchAll(/\[BLOCKED:\s*(\d+)\s*\][ \t]*([^\n]*)/gi)) {
+		const step = Number(match[1]);
+		if (Number.isInteger(step) && step > 0 && !blocked.some((b) => b.step === step)) {
+			blocked.push({ step, reason: match[2].trim().slice(0, 200) });
+		}
+	}
+	return blocked;
+}
+
+/**
+ * Build the manager's step directive: a self-contained message that names
+ * exactly one step to work on, what follows, and the completion contract
+ * ([DONE:n] / [BLOCKED:n]). Adapted from pi-herdr-agents' rule that a
+ * wake-up must carry the actual work, never a pointer to go look elsewhere.
+ * Returns null when every step is already complete.
+ */
+export function buildStepDirective(items: TodoItem[], options?: { note?: string }): string | null {
+	const index = items.findIndex((item) => !item.completed);
+	if (index === -1) return null;
+	const current = items[index];
+	const remaining = items.slice(index + 1).filter((item) => !item.completed);
+	const total = items.length;
+	const done = total - remaining.length - 1;
+	const lines = [
+		`[plan-manager] step ${current.step} (${done}/${total} done)`,
+		"",
+		`NOW: ${current.step}. ${current.text}`,
+	];
+	if (remaining.length > 0) {
+		lines.push("", "After this step:", ...remaining.map((item) => `${item.step}. ${item.text}`));
+	}
+	lines.push(
+		"",
+		`Work on step ${current.step} only. When it is verifiably complete, end your reply with the marker [DONE:${current.step}] on its own line, then stop — the plan manager will send the next step automatically.`,
+		`If step ${current.step} turns out to be wrong or impossible, end with [BLOCKED:${current.step}] <one-line reason> instead.`,
+	);
+	if (options?.note) {
+		lines.push("", `Note: ${options.note}`);
+	}
+	return lines.join("\n");
+}
+
 /** Mark items completed per [DONE:n] markers. Returns how many changed. */
 export function markCompletedSteps(text: string, items: TodoItem[]): number {
 	let changed = 0;
