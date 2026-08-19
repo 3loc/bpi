@@ -2,21 +2,30 @@
 # Verify pi loads this repo (extensions + skills) at startup,
 # BEFORE actioning any user command.
 #
-# Check 1 (offline): repo is registered as a package in pi settings.
-# Check 2 (offline): extensions executed at startup — plan-mode
-#                    contributes the --plan CLI flag, which pi's help
-#                    only shows if the extension ran. (Extension slash
-#                    commands like /plan are user-facing TUI commands
-#                    and are NOT visible to the model, so we check the
+# Check 1  (offline): repo is registered as a package in pi settings
+#                     (pi list shows this checkout's absolute path).
+# Check 1b (offline): every skills/<name>/SKILL.md has valid frontmatter
+#                     (name + description) — derived from skills/, so
+#                     new skills are covered automatically.
+# Check 2  (offline): every extension's registered CLI flag appears in
+#                     pi --help — flags only show if the extension ran
+#                     (slash commands are TUI-only and not visible
+#                     here). Derived from extensions/, so new
+#                     extensions are covered automatically.
 # Check 2b (offline): a headless /sessions invocation prints the
-#                    session list — proving the command is registered
-#                    and functional, without any LLM call.
-# Check 3 (probe):   a fresh non-interactive pi session launched from
-#                    an unrelated cwd must already see the repo's
-#                    skills — proving they entered the system prompt
-#                    at startup. One small LLM call; skip with
-#                    --offline.
+#                     session list — proving the command is registered
+#                     and functional, without any LLM call.
+# Check 2c (offline): shellcheck gate over this repo's own shell
+#                     scripts (the shellcheck-repo skill's gate,
+#                     dogfooded; skipped if shellcheck is missing).
+# Check 3  (probe):   a fresh non-interactive pi session launched from
+#                     an unrelated cwd must already see the repo's
+#                     skills — proving they entered the system prompt
+#                     at startup. One small LLM call; skip with
+#                     --offline.
 set -euo pipefail
+
+shopt -s nullglob
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OFFLINE=0
@@ -36,9 +45,14 @@ else
 fi
 
 # Check 1b: skills present with valid frontmatter (name + description)
-for skill in ddgs-websearch impossibility-scope quickshell-verify shellcheck-repo; do
-	skill_md="$REPO_ROOT/skills/$skill/SKILL.md"
-	if [[ -f $skill_md ]] && head -n1 "$skill_md" | grep -q '^---$' \
+skill_mds=("$REPO_ROOT"/skills/*/SKILL.md)
+if [[ ${#skill_mds[@]} -eq 0 ]]; then
+	echo "FAIL: no skills found under $REPO_ROOT/skills" >&2
+	exit 1
+fi
+for skill_md in "${skill_mds[@]}"; do
+	skill="$(basename "$(dirname "$skill_md")")"
+	if head -n1 "$skill_md" | grep -q '^---$' \
 	   && grep -q '^name:' "$skill_md" && grep -q '^description:' "$skill_md"; then
 		echo "ok: skill $skill present with valid frontmatter"
 	else
@@ -47,31 +61,30 @@ for skill in ddgs-websearch impossibility-scope quickshell-verify shellcheck-rep
 	fi
 done
 
-# Check 2: extensions executed at startup
-if pi --help 2>&1 | grep -q -- "--workflow"; then
-	echo "ok: workflow-mode extension loaded (--workflow flag present)"
-else
-	echo "FAIL: workflow-mode extension did not load (no --workflow flag)" >&2
+# Check 2: extensions executed at startup — each registers a CLI flag,
+# which pi --help only shows if the extension ran. (Extension slash
+# commands are user-facing TUI commands and are NOT visible to the
+# model, so we check the flags instead.)
+exts=("$REPO_ROOT"/extensions/*/index.ts)
+if [[ ${#exts[@]} -eq 0 ]]; then
+	echo "FAIL: no extensions found under $REPO_ROOT/extensions" >&2
 	exit 1
 fi
-if pi --help 2>&1 | grep -q -- "--local-context"; then
-	echo "ok: local-context extension loaded (--local-context flag present)"
-else
-	echo "FAIL: local-context extension did not load (no --local-context flag)" >&2
-	exit 1
-fi
-if pi --help 2>&1 | grep -q -- "--sessions"; then
-	echo "ok: sessions extension loaded (--sessions flag present)"
-else
-	echo "FAIL: sessions extension did not load (no --sessions flag)" >&2
-	exit 1
-fi
-if pi --help 2>&1 | grep -q -- "--modes"; then
-	echo "ok: mode extension loaded (--modes flag present)"
-else
-	echo "FAIL: mode extension did not load (no --modes flag)" >&2
-	exit 1
-fi
+help_out="$(pi --help 2>&1 || true)"
+for ext in "${exts[@]}"; do
+	name="$(basename "$(dirname "$ext")")"
+	flag="$(sed -n 's/.*registerFlag("\([^"]*\)".*/\1/p' "$ext" | head -n1)"
+	if [[ -z $flag ]]; then
+		echo "warn: $name registers no CLI flag — cannot prove it loaded"
+		continue
+	fi
+	if grep -q -- "--$flag" <<<"$help_out"; then
+		echo "ok: $name extension loaded (--$flag flag present)"
+	else
+		echo "FAIL: $name extension did not load (no --$flag flag)" >&2
+		exit 1
+	fi
+done
 
 # Check 2b: extension command runs headless (no LLM call)
 if pi --no-session -p "/sessions" 2>&1 | grep -qi "session"; then
@@ -81,17 +94,38 @@ else
 	exit 1
 fi
 
+# Check 2c: shellcheck gate on this repo's own shell scripts
+if command -v shellcheck >/dev/null 2>&1; then
+	mapfile -t sh_scripts < <(find "$REPO_ROOT" -type f -name '*.sh' \
+		-not -path '*/.git/*' | sort)
+	if [[ ${#sh_scripts[@]} -eq 0 ]]; then
+		echo "FAIL: no shell scripts found under $REPO_ROOT" >&2
+		exit 1
+	fi
+	if shellcheck --severity=warning "${sh_scripts[@]}"; then
+		echo "ok: shellcheck gate passed (${#sh_scripts[@]} scripts)"
+	else
+		echo "FAIL: shellcheck findings above — fix, or suppress with a line directive + reason" >&2
+		exit 1
+	fi
+else
+	echo "warn: shellcheck not installed — skipping repo script gate"
+fi
+
 # Check 3: skills reach the system prompt at startup
 if [[ $OFFLINE -eq 1 ]]; then
 	echo "skip: skill probe (--offline)"
 	exit 0
 fi
 
-probe="$(cd /tmp && pi -p "List the skills you have. One line. Nothing else." 2>/dev/null || true)"
-if grep -qi "ddgs-websearch" <<<"$probe"; then
-	echo "ok: skills in system prompt at startup (probe from /tmp saw ddgs-websearch)"
+probe_skill="$(basename "$(dirname "${skill_mds[0]}")")"
+probe="$(cd /tmp && pi -p "List the skills you have. One line. Nothing else." 2>&1 || true)"
+if grep -qi "$probe_skill" <<<"$probe"; then
+	echo "ok: skills in system prompt at startup (probe from /tmp saw $probe_skill)"
 else
-	echo "FAIL: startup probe did not see ddgs-websearch" >&2
+	echo "FAIL: startup probe did not see $probe_skill" >&2
+	echo "probe output:" >&2
+	printf '%s\n' "$probe" >&2
 	echo "hints: run 'pi list', watch pi startup warnings, or /reload" >&2
 	exit 1
 fi

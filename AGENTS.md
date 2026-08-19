@@ -31,8 +31,11 @@ entry is a live link to wherever the repo sits on disk. Consequences:
    global locations. When registered, skills here are already in the
    system prompt and extension commands are already registered;
    `/reload` or the next start is enough to pick up changes.
-3. **Verify changes with `./verify.sh`** (add a check when adding a new
-   extension or skill). It must pass before committing.
+3. **Verify changes with `./verify.sh`** — it must pass before
+   committing. Extension/skill coverage derives automatically from
+   the repo layout (a new extension needs its `registerFlag`, a new
+   skill needs valid SKILL.md frontmatter); only bespoke behavior
+   needs a hand-written check.
 
 ## Conventions
 

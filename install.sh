@@ -25,15 +25,24 @@ pi install "$REPO_ROOT"
 
 echo
 echo "Installed: $REPO_ROOT"
-echo "Resources:"
-echo "  extensions/workflow-mode -> /workflow, /todos, Ctrl+Alt+W, pi --workflow"
-echo "                          settle-driven execution: /workflow run|pause,"
-echo "                          review-verdict advance (no in-turn marker)"
-echo "  extensions/sessions   ->  /sessions [all|switch], pi --sessions"
-echo "                          activity-status session listing"
-echo "  skills/ddgs-websearch  ->  web/news/image/video/book search + URL"
-echo "                            extraction via ddgs (/skill:ddgs-websearch)"
-echo "  skills/shellcheck-repo ->  shellcheck gate for shell scripts written"
-echo "                            into repos (ad-hoc commands excluded)"
+echo "Resources (details: README.md):"
+shopt -s nullglob
+for ext in "$REPO_ROOT"/extensions/*/index.ts; do
+	name="$(basename "$(dirname "$ext")")"
+	flag="$(sed -n 's/.*registerFlag("\([^"]*\)".*/\1/p' "$ext" | head -n1)"
+	if [[ -n $flag ]]; then
+		echo "  extensions/$name -> pi --$flag"
+	else
+		echo "  extensions/$name (no CLI flag)"
+	fi
+done
+for skill_md in "$REPO_ROOT"/skills/*/SKILL.md; do
+	name="$(basename "$(dirname "$skill_md")")"
+	desc="$(sed -n 's/^description: *//p' "$skill_md" | head -n1)"
+	if [[ ${#desc} -gt 100 ]]; then
+		desc="${desc:0:100}…"
+	fi
+	echo "  skills/$name -> $desc"
+done
 echo "Run 'pi list' to verify, or /reload inside a running session."
 echo "Confirm startup loading on this machine: ./verify.sh"
