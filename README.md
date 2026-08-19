@@ -20,6 +20,7 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 | [`skills/impossibility-scope`](skills/impossibility-scope/SKILL.md) | Discipline for impossibility/"can't happen" claims — forces actor/mechanism/flip-point scoping instead of absolutes. Loads whenever such a claim is written or checked |
 | [`skills/quickshell-verify`](skills/quickshell-verify/SKILL.md) | Verification ladder for Quickshell (QML) configs: `scripts/verify.sh` lints (known false positives filtered, config singletons detected) and runs the offscreen `qs -p` load-test, classifying pass/real-failure. References carry qmllint triage and hard-won QML gotchas. Auto-loads for quickshell work; requires `qs` + Qt6 qmllint |
 | [`skills/shellcheck-repo`](skills/shellcheck-repo/SKILL.md) | Shellcheck gate for repo-bound shell scripts: run `shellcheck --severity=warning` on every script created/edited for a commit (`.sh`, shebang'd extensionless, sourced libs) before claiming done; no-new-findings rule for legacy scripts. Auto-loads whenever pi writes shell files; ad-hoc shell commands excluded. Requires `shellcheck` on PATH |
+| [`skills/shell-quality`](skills/shell-quality/SKILL.md) | Design and review gate for repo-bound shell scripts (complements `shellcheck-repo`): avoid hardcoded lists that should be derived, stale comments, fragile inline multi-language programs, awkward escape chains. Auto-loads when writing or reviewing repo scripts; ad-hoc commands excluded |
 ## Install
 
 ```bash
