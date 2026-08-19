@@ -21,6 +21,8 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 | [`skills/quickshell-verify`](skills/quickshell-verify/SKILL.md) | Verification ladder for Quickshell (QML) configs: `scripts/verify.sh` lints (known false positives filtered, config singletons detected) and runs the offscreen `qs -p` load-test, classifying pass/real-failure. References carry qmllint triage and hard-won QML gotchas. Auto-loads for quickshell work; requires `qs` + Qt6 qmllint |
 | [`skills/shellcheck-repo`](skills/shellcheck-repo/SKILL.md) | Shellcheck gate for repo-bound shell scripts: run `shellcheck --severity=warning` on every script created/edited for a commit (`.sh`, shebang'd extensionless, sourced libs) before claiming done; no-new-findings rule for legacy scripts. Auto-loads whenever pi writes shell files; ad-hoc shell commands excluded. Requires `shellcheck` on PATH |
 | [`skills/shell-quality`](skills/shell-quality/SKILL.md) | Design and review gate for repo-bound shell scripts (complements `shellcheck-repo`): avoid hardcoded lists that should be derived, stale comments, fragile inline multi-language programs, awkward escape chains. Auto-loads when writing or reviewing repo scripts; ad-hoc commands excluded |
+| [`skills/yaml-lint-repo`](skills/yaml-lint-repo/SKILL.md) | Yamllint + parse probe (+ optional prettier/yamlfmt format check) for repo-bound YAML files and markdown frontmatter. Complements `yaml-quality` (design review). Uses each tool if installed; absence degrades the gate (warn + skip), it doesn't block the skill |
+| [`skills/yaml-quality`](skills/yaml-quality/SKILL.md) | Design and review gate for repo-bound YAML (complements `yaml-lint-repo`): avoid implicit-type footguns (Norway/sexagesimal/octal), unquoted colons, comments that don't survive the formatter, fragile quoting strategy. References cover pitfalls, quoting rules, style, and sub-format conventions. Auto-loads when writing/reviewing repo YAML |
 ## Install
 
 ```bash
@@ -134,6 +136,10 @@ Rules that keep this true:
   qmllint is absent.
 - `skills/shellcheck-repo` needs the external `shellcheck` CLI at runtime;
   scripts delivered without a clean/justified gate run must say so.
+- `skills/yaml-lint-repo` uses `yamllint` + `prettier`/`yamlfmt` if
+  installed; absence only warns (frontmatter is still validated by the
+  skill-load check). Scripts delivered without running the gate should
+  say so.
 - Prefer moving extensions and skills here over dropping files into
   `~/.pi/agent/extensions/` or `~/.pi/agent/skills/`, so everything is
   versioned in one place.

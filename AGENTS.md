@@ -45,6 +45,14 @@ entry is a live link to wherever the repo sits on disk. Consequences:
 - Adding an extension: `extensions/<name>/index.ts` exporting a default
   factory `(pi: ExtensionAPI) => void`; register a flag when practical
   so `pi --help` + `verify.sh` can prove it loaded.
+- **Skill layering**: when a tool family has both a mechanical gate
+  (lint/format/parse) and a design-review dimension, split into two
+  skills — `<tool>-repo` for the gate, `<tool>-quality` for the
+  design. Lets either be loaded independently and lets the design
+  side grow without bloating the gate. Examples: `shellcheck-repo`
+  + `shell-quality`; `yaml-lint-repo` + `yaml-quality`. The design
+  skill points to the gate in its `Why this is split` section so
+  the relationship is not lost.
 - Update `README.md` tables and `install.sh` Resources output when the
   contents change.
 - `local-context` extension intentionally does nothing in this repo:

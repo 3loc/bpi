@@ -1,6 +1,6 @@
 ---
 name: shell-quality
-description: Design and review repo-bound shell scripts (`.sh`/`.bash` files, shebang'd extensionless scripts, sourced shell libs) for brittleness: hardcoded lists that should be derived, stale comments that lie about behavior, fragile inline embedding of multi-language programs, awkward escape chains. Use when writing, rewriting, or meaningfully editing a script destined to live in a repo, or when reviewing one for robustness. Complements `shellcheck-repo` (syntax gate) with a design gate. NOT for ad-hoc shell commands.
+description: "Design and review repo-bound shell scripts (`.sh`/`.bash` files, shebang'd extensionless scripts, sourced shell libs) for brittleness: hardcoded lists that should be derived, stale comments that lie about behavior, fragile inline embedding of multi-language programs, awkward escape chains. Use when writing, rewriting, or meaningfully editing a script destined to live in a repo, or when reviewing one for robustness. Complements `shellcheck-repo` (syntax gate) with a design gate. NOT for ad-hoc shell commands."
 compatibility: none (no runtime dependency)
 ---
 

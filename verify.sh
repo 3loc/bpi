@@ -18,6 +18,11 @@
 # Check 2c (offline): shellcheck gate over this repo's own shell
 #                     scripts (the shellcheck-repo skill's gate,
 #                     dogfooded; skipped if shellcheck is missing).
+# Check 2d (offline): yamllint gate over this repo's own YAML files
+#                     (the yaml-lint-repo skill's gate, dogfooded;
+#                     skipped if yamllint is missing; warns but does
+#                     not fail when no standalone .yaml/.yml files
+#                     exist — frontmatter is already covered by 1b).
 # Check 3  (probe):   a fresh non-interactive pi session launched from
 #                     an unrelated cwd must already see the repo's
 #                     skills — proving they entered the system prompt
@@ -110,6 +115,27 @@ if command -v shellcheck >/dev/null 2>&1; then
 	fi
 else
 	echo "warn: shellcheck not installed — skipping repo script gate"
+fi
+
+# Check 2d: yamllint gate on this repo's YAML files (parallel to the
+# existing shellcheck pass; SKILL.md frontmatter is already covered
+# by Check 1b, so this only sweeps standalone .yaml/.yml files).
+if command -v yamllint >/dev/null 2>&1; then
+	mapfile -t yaml_files < <(find "$REPO_ROOT" -type f \
+		\( -name '*.yaml' -o -name '*.yml' \) \
+		-not -path '*/.git/*' -not -path '*/node_modules/*' | sort)
+	if [[ ${#yaml_files[@]} -eq 0 ]]; then
+		echo "warn: no standalone .yaml/.yml files under $REPO_ROOT — yamllint gate skipped (frontmatter covered by Check 1b)"
+	elif yamllint -d default \
+		-d "{extends: relaxed, rules: {line-length: disable, document-start: disable, comments-indentation: disable}}" \
+		"${yaml_files[@]}"; then
+		echo "ok: yamllint gate passed (${#yaml_files[@]} files)"
+	else
+		echo "FAIL: yamllint findings above — fix, or suppress with a line directive + reason" >&2
+		exit 1
+	fi
+else
+	echo "warn: yamllint not installed — skipping repo YAML gate"
 fi
 
 # Check 3: skills reach the system prompt at startup
