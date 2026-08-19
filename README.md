@@ -19,6 +19,7 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 | [`skills/ddgs-websearch`](skills/ddgs-websearch/SKILL.md) | Web/news/image/video/book search and URL content extraction via the `ddgs` CLI (no API keys). Loads automatically when a task needs fresh web info; also usable as `/skill:ddgs-websearch`. Requires `ddgs` on PATH |
 | [`skills/impossibility-scope`](skills/impossibility-scope/SKILL.md) | Discipline for impossibility/"can't happen" claims — forces actor/mechanism/flip-point scoping instead of absolutes. Loads whenever such a claim is written or checked |
 | [`skills/quickshell-verify`](skills/quickshell-verify/SKILL.md) | Verification ladder for Quickshell (QML) configs: `scripts/verify.sh` lints (known false positives filtered, config singletons detected) and runs the offscreen `qs -p` load-test, classifying pass/real-failure. References carry qmllint triage and hard-won QML gotchas. Auto-loads for quickshell work; requires `qs` + Qt6 qmllint |
+| [`skills/shellcheck-repo`](skills/shellcheck-repo/SKILL.md) | Shellcheck gate for repo-bound shell scripts: run `shellcheck --severity=warning` on every script created/edited for a commit (`.sh`, shebang'd extensionless, sourced libs) before claiming done; no-new-findings rule for legacy scripts. Auto-loads whenever pi writes shell files; ad-hoc shell commands excluded. Requires `shellcheck` on PATH |
 ## Install
 
 ```bash
@@ -130,6 +131,8 @@ Rules that keep this true:
 - `skills/quickshell-verify` needs `qs` (quickshell ≥ 0.3.0) and Qt6
   qmllint at runtime; `scripts/verify.sh` degrades to load-test-only when
   qmllint is absent.
+- `skills/shellcheck-repo` needs the external `shellcheck` CLI at runtime;
+  scripts delivered without a clean/justified gate run must say so.
 - Prefer moving extensions and skills here over dropping files into
   `~/.pi/agent/extensions/` or `~/.pi/agent/skills/`, so everything is
   versioned in one place.

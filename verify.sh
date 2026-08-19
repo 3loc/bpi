@@ -36,7 +36,7 @@ else
 fi
 
 # Check 1b: skills present with valid frontmatter (name + description)
-for skill in ddgs-websearch impossibility-scope quickshell-verify; do
+for skill in ddgs-websearch impossibility-scope quickshell-verify shellcheck-repo; do
 	skill_md="$REPO_ROOT/skills/$skill/SKILL.md"
 	if [[ -f $skill_md ]] && head -n1 "$skill_md" | grep -q '^---$' \
 	   && grep -q '^name:' "$skill_md" && grep -q '^description:' "$skill_md"; then
