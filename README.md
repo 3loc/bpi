@@ -11,6 +11,7 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 | [`extensions/workflow-mode`](extensions/workflow-mode/README.md) | `/workflow`, `/todos`, `Ctrl+Alt+W`, `pi --workflow` — settle-driven, manager-owned workflow execution: read-only drafting → step-by-step execution with a brief review turn after each step (verdict-driven advance, no in-turn marker protocol) |
 | [`extensions/sessions`](extensions/sessions/index.ts) | `/sessions [all|switch]`, `pi --sessions` — survey saved sessions with activity status (current / active / recent / inactive), message counts, and previews; `switch` opens a picker |
 | [`extensions/local-context`](extensions/local-context/index.ts) | Guarantees a local-directory snapshot (listing, README head, package.json, git state) enters the system prompt before each user command — but **only when no project `AGENTS.md`/`CLAUDE.md` exists in cwd or git root** (native context loading wins) |
+| [`extensions/context-usage-report`](extensions/context-usage-report/index.ts) | `/context-report [breakdown\|total\|system]`, `pi --context-report` — at startup shows a one-line context size + % of window header; the command (and `--context-report` flag) show a per-category breakdown table (system, project context, skills, conversation by role) with clear attribution: a Provider column (the measured total, once reported) beside a Heuristic column of raw per-category estimates (prose ≈ 4 chars/token, code/JSON ≈ 3.5, CJK ≈ 1.9 — tuned against the real GLM-4.6 tokenizer) |
 
 ### Skills
 

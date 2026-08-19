@@ -99,6 +99,16 @@ else
 	exit 1
 fi
 
+# Check 2b2: context-usage-report command runs headless and lists skills +
+# system prompt buckets — proves the command is registered, parses the
+# prompt, and reports the expected categories, without any LLM call.
+if pi --no-session -p "/context-report system" 2>&1 | grep -qi "skills (metadata)\|project context\|system prompt"; then
+	echo "ok: context-usage-report command runs headless (pi -p \"/context-report system\")"
+else
+	echo "FAIL: context-usage-report command produced no expected output" >&2
+	exit 1
+fi
+
 # Check 2c: shellcheck gate on this repo's own shell scripts
 if command -v shellcheck >/dev/null 2>&1; then
 	mapfile -t sh_scripts < <(find "$REPO_ROOT" -type f -name '*.sh' \
