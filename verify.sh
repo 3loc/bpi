@@ -35,6 +35,18 @@ else
 	exit 1
 fi
 
+# Check 1b: skills present with valid frontmatter (name + description)
+for skill in ddgs-websearch impossibility-scope quickshell-verify; do
+	skill_md="$REPO_ROOT/skills/$skill/SKILL.md"
+	if [[ -f $skill_md ]] && head -n1 "$skill_md" | grep -q '^---$' \
+	   && grep -q '^name:' "$skill_md" && grep -q '^description:' "$skill_md"; then
+		echo "ok: skill $skill present with valid frontmatter"
+	else
+		echo "FAIL: skill $skill missing or frontmatter invalid ($skill_md)" >&2
+		exit 1
+	fi
+done
+
 # Check 2: extensions executed at startup
 if pi --help 2>&1 | grep -q -- "--workflow"; then
 	echo "ok: workflow-mode extension loaded (--workflow flag present)"
