@@ -42,7 +42,6 @@ done
 command -v qs >/dev/null 2>&1 || { printf 'FAIL: qs not on PATH\n' >&2; exit 2; }
 
 LOG="$(mktemp -t qs-selftest.XXXXXX.log)"
-SOCKET_DIR="/run/user/$(id -u)/quickshell"
 
 QT_QPA_PLATFORM=offscreen qs -p "$CONFIG_DIR" >"$LOG" 2>&1 &
 QS_PID=$!
