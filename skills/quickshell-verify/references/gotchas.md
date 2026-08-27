@@ -67,3 +67,46 @@ useless there. Poll with a `Timer` calling `reload()` (e.g. 2s) and parse
 in `onLoaded` via `text()`. CPU% = delta of `/proc/stat` jiffies between
 polls (first read is baseline-only); mem% from `/proc/meminfo`
 `MemTotal - MemAvailable`.
+
+## Quickshell IPC (`qs ipc call`) — runtime-only, invisible to the ladder
+
+The offscreen load-test passes any config whose QML parses and types,
+so a fully-wrong IpcHandler ships silently. The rules below are all
+verified against a scratch instance; the regression test for the
+specific gotchas is the repo's `scripts/ipc-matrix.txt` driven by the
+skill's `scripts/ipc-test.sh`.
+
+- **CLI subcommand names shadow handler functions.** `qs ipc`'s
+  subcommands are `show`, `call`, `wait`, `listen`, `prop`. A handler
+  function with any of those names is uncallable: the parser matches
+  the keyword in the function-name slot too, so
+  `qs ipc call overview show all` dies in argparse (rc=109, handler
+  never reached). Never name a handler after a `qs ipc` subcommand.
+- **Typed parameters enforce EXACT argument counts.** Missing trailing
+  args reject the call with rc=0 and stderr
+  `"Too few arguments provided"`. Extra args likewise reject with
+  `"Too many arguments provided"`. Optional trailing args are
+  impossible. The shape that works: one **fixed-arity** function per
+  intent (`shot <mode>` vs `shotTo <mode> <dest>`; `open` vs
+  `openAll` vs `openOn <screen>`).
+- **Untyped parameters unregister the function entirely.** A handler
+  declared `function foo(a, b)` (no `: string` annotations) is silently
+  not registered — `qs ipc show` will not list it and `call` will say
+  `"Function not found"`. Always type your parameters.
+
+## IPC test harness: instance-selection gremlins
+
+The `qs ipc` CLI selects among running instances for a config path by
+**PID**, and the default picks the **oldest**. Killed instances leave
+their per-pid socket symlink behind (a proper exit removes it; a
+SIGTERM at the wrong moment does not). Two failure modes to know:
+
+- **"Not ready to accept queries yet"** almost always means the CLI
+  connected to a stale socket of a previously-killed instance. Pass
+  `-i <id>` or `--newest` (or wipe the registry dirs as a last
+  resort). The skill's `ipc-test.sh` and `qml-selftest.sh` handle this
+  for you by waiting on the per-pid symlink and selecting by id.
+- **Never `pkill -f "qs -p"`** — the pattern matches the bash process
+  running the test block too (its `cmdline` contains the string),
+  silently killing the rest of the block mid-flight. Use
+  `kill $(pgrep -x qs)`.

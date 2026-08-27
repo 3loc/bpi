@@ -59,12 +59,34 @@ Offscreen never instantiates panel children and has no compositor:
   and loads fine without it, and only *calling* the method (or reading the
   live log) catches it.
 - Popup positioning, Hyprland IPC, anything compositor-dependent.
+- **`IpcHandler` semantics** — the load-test can't catch a handler
+  function shadowed by a `qs ipc` subcommand name, an arity mismatch
+  against typed params, or a function silently unregistered because its
+  params aren't typed. Verify with `scripts/ipc-test.sh` against a
+  matrix of every documented `target func [args]` form (the rules +
+  the test harness live in [references/gotchas.md](references/gotchas.md)).
 
 When a change touches such code, verify it with a **scratch config** that
 instantiates the object and actually invokes the method (`Timer` +
 `console.log` + `Qt.exit(0)`), run offscreen — then hand the rest to the
 user for a live run. A scratch test that only *creates* the object is not
 enough; this exact gap shipped a broken context menu once.
+
+## Runtime helpers
+
+For IPC and pure-QML runtime checks the skill ships two small scripts
+(generic; usable on any quickshell config):
+
+- `scripts/ipc-test.sh --config <dir> --matrix <file>` — boots a
+  scratch config offscreen, runs each matrix line as `qs ipc call`,
+  asserts parse + arity + handler invocation (via an `IPCMARK`
+  console.log injected by `extract-ipc-handlers.py`).
+- `scripts/qml-selftest.sh <dir>` — runs a scratch `shell.qml` whose
+  last statement is `Qt.exit(rc)`, propagating its exit code.
+
+Both own instance lifecycle (boot, wait on the per-pid IPC socket,
+kill by PID, no stale-socket "not ready" surprises) so callers never
+hand-roll those steps.
 
 ## References
 
