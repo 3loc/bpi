@@ -310,6 +310,13 @@ function cleanStream(base: AssistantMessageEventStream): AssistantMessageEventSt
 		/** Append already-deduped thinking text to the current segment. */
 		const appendThinking = (delta: string) => {
 			if (!delta || !output) return;
+			// M3 sometimes streams thinking deltas that include the literal
+			// think-tag markers as content (e.g. a thinking delta that is literally
+			// "<think>" with no inner content). Strip any such markers from the
+			// delta so they never appear in the thinking field or get pushed as
+			// visible deltas.
+			delta = delta.replace(/<think>/g, "").replace(/<\/think>/g, "");
+			if (!delta) return;
 			const seg = ensureSegment();
 			if (seg.text === "") {
 				delta = delta.replace(/^\s+/, "");
