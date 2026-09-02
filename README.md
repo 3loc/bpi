@@ -18,6 +18,7 @@ My personal [pi](https://pi.dev) extensions and skills, persisted as a pi packag
 
 | Skill | Provides |
 |-------|----------|
+| [`skills/code-comments`](skills/code-comments/SKILL.md) | Comment discipline for repo code: default is no comment (names carry the what); why-comments for rationale/constraints/workarounds; what-comments only for genuinely complex logic; never session narration ("changed X", "per request", changelogs, commented-out code). Auto-loads when writing or editing repo code or reviewing comments |
 | [`skills/ddgs-websearch`](skills/ddgs-websearch/SKILL.md) | Web/news/image/video/book search and URL content extraction via the `ddgs` CLI (no API keys). Loads automatically when a task needs fresh web info; also usable as `/skill:ddgs-websearch`. Requires `ddgs` on PATH |
 | [`skills/git-clone-investigate`](skills/git-clone-investigate/SKILL.md) | Given a repo URL, clone to a scratch dir and investigate with git + file tools (`log`, `blame`, `ls-files`, `rg`, `read`) — never the forge web/API/raw URLs. Auto-loads whenever a repo link needs exploring or answering questions about |
 | [`skills/impossibility-scope`](skills/impossibility-scope/SKILL.md) | Discipline for impossibility/"can't happen" claims — forces actor/mechanism/flip-point scoping instead of absolutes. Loads whenever such a claim is written or checked |
