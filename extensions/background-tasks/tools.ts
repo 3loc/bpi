@@ -11,11 +11,13 @@
  * fires with the right shape" assertion lives in tests, not in a
  * live session.
  *
- * Note: the typebox parameter schemas live in index.ts (not here)
- * because typebox is a peer dependency that only resolves inside
- * pi's loader. Keeping the schemas with the pi-coupled entry makes
- * the handlers themselves pure and importable from tests without a
- * pi runtime.
+ * Note: the TypeBox parameter schemas (the things actually passed
+ * to pi.registerTool as `parameters:`) live in `./schemas.ts`. The
+ * interfaces below are TypeScript-only mirrors of those schemas and
+ * describe the shape the handlers accept. If you change one, change
+ * the other — and run schemas.test.ts, which would have caught the
+ * original bug (parameters set to a TypeScript interface = empty at
+ * runtime = 400 from the LLM provider).
  */
 
 import type { Backend, BackendCapabilities } from "./backend.ts";
@@ -25,10 +27,12 @@ import { isTerminal, TERMINAL_STATES } from "./state.ts";
 /* ------------------------------------------------------------------ *
  * Shared types                                                        *
  *                                                                    *
- * The typebox parameter schemas live in index.ts (typebox is a      *
- * peer dep that only resolves inside pi's loader). The shapes below *
- * mirror those schemas — they are the canonical contract that the   *
- * handlers accept.                                                   *
+ * These interfaces are TypeScript-only mirrors of the TypeBox       *
+ * schemas in ./schemas.ts. They describe the shape the handlers     *
+ * accept; they are NOT passed to pi.registerTool (interfaces are    *
+ * erased at runtime, so doing so would leave the LLM provider      *
+ * with an empty parameter block and the next tool call would fail   *
+ * with a 400). See schemas.ts for the runtime schemas.              *
  * ------------------------------------------------------------------ */
 
 export interface RunParams {
@@ -64,8 +68,8 @@ export interface JournalParams {
 	maxChars?: number;
 }
 
-// Re-export so index.ts can use the same source of truth for the
-// `state` enum string in its typebox schema description.
+// Re-export so schemas.ts (or index.ts) can use the same source of
+// truth for the `state` enum string in the typebox schema description.
 export { TERMINAL_STATES };
 
 export interface ToolContext {

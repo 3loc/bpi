@@ -63,16 +63,18 @@ import { SystemdBackend } from "./backends/systemd.ts";
 import { isTerminal, type Job } from "./state.ts";
 import { tick } from "./watcher.ts";
 import {
-	CancelParams,
+	CancelParamsSchema,
+	JournalParamsSchema,
+	RunParamsSchema,
+	StatusParamsSchema,
+	WaitParamsSchema,
+} from "./schemas.ts";
+import {
 	handleCancel,
 	handleJournal,
 	handleRun,
 	handleStatus,
 	humanDuration,
-	JournalParams,
-	RunParams,
-	StatusParams,
-	WaitParams,
 	handleWait,
 	type ToolContext,
 } from "./tools.ts";
@@ -223,7 +225,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 			"Prefer user scope (the default) — system scope needs polkit and runs as PID 1.",
 			"Pass timeoutMs when the wall-clock cost matters; the watcher enforces it independently of any backend-side timer.",
 		],
-		parameters: RunParams,
+		parameters: RunParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const tc = { ...toolContext(), cwd: ctx.cwd };
 			return handleRun(jobs, backend!, tc, params);
@@ -235,7 +237,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		label: "background status",
 		description:
 			"Non-blocking status snapshot for a single job or the session's known jobs. For a single id, returns the parsed state / exit / result. With no id, returns a table of all jobs known to this session (active + recent terminal).",
-		parameters: StatusParams,
+		parameters: StatusParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			return handleStatus(jobs, backend!, toolContext(), params);
 		},
@@ -246,7 +248,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		label: "background wait",
 		description:
 			"Block until a job reaches a target state (default `completed`). Implemented via the backend's race-free wait primitive. Distinct from the watcher's completion notification — this blocks the calling turn; the watcher fires on a future turn.",
-		parameters: WaitParams,
+		parameters: WaitParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			return handleWait(jobs, backend!, toolContext(), params);
 		},
@@ -257,7 +259,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		label: "background cancel",
 		description:
 			"Stop a running job. Default uses the backend's stop primitive (SIGTERM → SIGKILL after TimeoutStopSec). Pass signal=SIGKILL for a hard kill. The watcher will subsequently fire a `cancelled` completion notification.",
-		parameters: CancelParams,
+		parameters: CancelParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			return handleCancel(jobs, backend!, toolContext(), params);
 		},
@@ -268,7 +270,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		label: "background journal",
 		description:
 			"Read the captured output for a known job. The completion notification only echoes ~200 chars; use this tool to fetch more (bounded by `limit` / `maxChars`). Pair with `outputFile: true` on the original `background_run` when the log is too large for any reasonable journal window.",
-		parameters: JournalParams,
+		parameters: JournalParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			return handleJournal(jobs, backend!, toolContext(), params);
 		},

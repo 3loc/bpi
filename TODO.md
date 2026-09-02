@@ -9,6 +9,10 @@ Two kinds of items live here:
 2. **Out-of-band follow-ups**: anything else worth tracking that doesn't
    fit in a commit message or a README.
 
+Regression risks (issues that already bit us and the structural
+defenses the next session should build or harden) live in
+[`REGRESSION.md`](REGRESSION.md), not here.
+
 Format:
 
 ```

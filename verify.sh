@@ -135,17 +135,27 @@ if command -v node >/dev/null 2>&1; then
 			echo "FAIL: no .test.ts files found under extensions/background-tasks" >&2
 			exit 1
 		fi
-		# node --test discovers *.test.ts files in the directory form
-		# itself — same shape as `npm test`. New test files get picked
-		# up automatically; no list to maintain.
-		if (cd "$REPO_ROOT" && node --test --experimental-strip-types \
-				extensions/background-tasks/) >/dev/null 2>&1; then
-			echo "ok: background-tasks test gate passed (${#test_files[@]} files)"
+		# The schemas tests import typebox (declared as a devDependency
+		# in package.json so pi's extension code and the tests share
+		# the exact same version). Skip with a clear message rather
+		# than crashing on `ERR_MODULE_NOT_FOUND` if npm install
+		# hasn't been run yet — that error is unhelpful when the
+		# underlying cause is "node_modules/ doesn't exist".
+		if [[ ! -d "$REPO_ROOT/node_modules/typebox" ]]; then
+			echo "warn: node_modules/typebox missing — run 'npm install' in $REPO_ROOT to enable the test gate"
 		else
-			echo "FAIL: background-tasks tests failed — run 'npm test' for details" >&2
-			(cd "$REPO_ROOT" && node --test --experimental-strip-types \
-				extensions/background-tasks/) >&2
-			exit 1
+			# node --test discovers *.test.ts files in the directory form
+			# itself — same shape as `npm test`. New test files get picked
+			# up automatically; no list to maintain.
+			if (cd "$REPO_ROOT" && node --test --experimental-strip-types \
+					extensions/background-tasks/) >/dev/null 2>&1; then
+				echo "ok: background-tasks test gate passed (${#test_files[@]} files)"
+			else
+				echo "FAIL: background-tasks tests failed — run 'npm test' for details" >&2
+				(cd "$REPO_ROOT" && node --test --experimental-strip-types \
+					extensions/background-tasks/) >&2
+				exit 1
+			fi
 		fi
 	else
 		echo "warn: node $node_major.$node_minor < 22.6 — skipping background-tasks test gate"
