@@ -109,6 +109,51 @@ else
 	exit 1
 fi
 
+# Check 2b3: /jobs command runs headless against the background-tasks
+# extension — proves the extension loaded and registered the command,
+# without any LLM call.
+if pi --no-session -p "/jobs" 2>&1 | grep -qi "background_run"; then
+	echo "ok: background-tasks /jobs command runs headless (pi -p \"/jobs\")"
+else
+	echo "FAIL: /jobs command did not advertise background_run" >&2
+	exit 1
+fi
+
+# Check 2e: node --test gate over the background-tasks test suite.
+# Uses Node's built-in test runner with --experimental-strip-types so
+# the tests run against the same TypeScript source pi loads, without
+# adding a build step or a new dependency. Skipped on Node < 22.6
+# (strip-types was experimental before then); absence of node is a
+# warn, not a fail — the gate is a strict improvement, not a baseline.
+if command -v node >/dev/null 2>&1; then
+	node_major="$(node -p 'process.versions.node.split(".")[0]')"
+	node_minor="$(node -p 'process.versions.node.split(".")[1]')"
+	if (( node_major >= 23 )) || (( node_major == 22 && node_minor >= 6 )); then
+		mapfile -t test_files < <(find "$REPO_ROOT/extensions/background-tasks" \
+			-type f -name '*.test.ts' | sort)
+		if [[ ${#test_files[@]} -eq 0 ]]; then
+			echo "FAIL: no .test.ts files found under extensions/background-tasks" >&2
+			exit 1
+		fi
+		# node --test discovers *.test.ts files in the directory form
+		# itself — same shape as `npm test`. New test files get picked
+		# up automatically; no list to maintain.
+		if (cd "$REPO_ROOT" && node --test --experimental-strip-types \
+				extensions/background-tasks/) >/dev/null 2>&1; then
+			echo "ok: background-tasks test gate passed (${#test_files[@]} files)"
+		else
+			echo "FAIL: background-tasks tests failed — run 'npm test' for details" >&2
+			(cd "$REPO_ROOT" && node --test --experimental-strip-types \
+				extensions/background-tasks/) >&2
+			exit 1
+		fi
+	else
+		echo "warn: node $node_major.$node_minor < 22.6 — skipping background-tasks test gate"
+	fi
+else
+	echo "warn: node not installed — skipping background-tasks test gate"
+fi
+
 # Check 2c: shellcheck gate on this repo's own shell scripts
 if command -v shellcheck >/dev/null 2>&1; then
 	mapfile -t sh_scripts < <(find "$REPO_ROOT" -type f -name '*.sh' \

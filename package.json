@@ -2,10 +2,14 @@
   "name": "my-pi",
   "version": "0.2.0",
   "private": true,
+  "type": "module",
   "description": "Personal pi extensions and skills: plan mode workflow, ddgs web search",
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["./extensions"],
     "skills": ["./skills"]
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types extensions/background-tasks/"
   }
 }
