@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { InProcBackend } from "./backends/inproc.ts";
 import type { Job } from "./state.ts";
-import { handleCancel, handleJournal, handleRun, handleStatus, handleWait, type ToolContext } from "./tools.ts";
+import { handleCancel, handleJournal, handleRun, handleStatus, handleWait, formatJobTable, type ToolContext } from "./tools.ts";
 
 function tmp(): string {
 	return mkdtempSync(path.join(tmpdir(), "bt-tools-"));
@@ -104,6 +104,7 @@ describe("handleRun", () => {
 			const r = await handleRun(jobs, backend, { ...ctx(), cwd: dir }, { command: "sleep 1", label: "wait", timeoutMs: 5_000, outputFile: "/tmp/x.log" });
 			const text = r.content[0]?.text ?? "";
 			assert.ok(text.includes("Launched wait as"), "summary includes the launch line");
+			assert.ok(text.includes("command: sleep 1"), "summary restates the command");
 			assert.ok(text.includes("timeout: 5.0s"), "summary includes the timeout");
 			assert.ok(text.includes("outputFile: /tmp/x.log"), "summary includes the output file");
 			assert.ok(text.includes("background_wait"), "summary points at the wait tool");
@@ -200,6 +201,23 @@ describe("handleStatus", () => {
 			const r = await handleStatus(jobs, backend, ctx(), {});
 			assert.match(r.content[0]?.text ?? "", new RegExp(run.details.id as string), "fresh job shown");
 			assert.ok(!(r.content[0]?.text ?? "").includes("old.service"), "old job hidden");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("shows the command in the table (one-lined) and in the single-job view (verbatim)", async () => {
+		const dir = tmp();
+		try {
+			const backend = new InProcBackend();
+			const jobs = freshMap();
+			const multiLine = "echo a\necho b";
+			const run = await handleRun(jobs, backend, { ...ctx(), cwd: dir }, { command: multiLine, label: "probe" });
+			const table = await handleStatus(jobs, backend, ctx(), {});
+			assert.ok((table.content[0]?.text ?? "").includes("command"), "table has a command column");
+			assert.ok((table.content[0]?.text ?? "").includes("echo a echo b"), "table one-lines multi-line commands");
+			const single = await handleStatus(jobs, backend, ctx(), { id: run.details.id as string });
+			assert.ok((single.content[0]?.text ?? "").includes("command: echo a\n    echo b"), "single view keeps the original newlines (indented)");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

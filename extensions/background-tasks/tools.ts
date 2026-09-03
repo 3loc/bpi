@@ -135,6 +135,7 @@ export async function handleRun(jobs: Map<string, Job>, backend: Backend, ctx: T
 
 	const summary = [
 		`Launched ${label} as ${result.id} (${scope})`,
+		`  command: ${trunc(oneLine(params.command), COMMAND_PREVIEW_CHARS)}`,
 		`  workingDirectory: ${workingDirectory}`,
 		params.timeoutMs !== undefined ? `  timeout: ${humanDuration(params.timeoutMs)}` : "",
 		outputFile ? `  outputFile: ${outputFile}` : "",
@@ -182,7 +183,7 @@ export async function handleStatus(jobs: Map<string, Job>, backend: Backend, _ct
 		return {
 			content: [{
 				type: "text",
-				text: `${job.label} (${job.id}): ${formatState(job.state)} exit=${job.exitStatus ?? "?"} result=${job.result ?? "?"}`.trim(),
+				text: `${job.label} (${job.id}): ${formatState(job.state)} exit=${job.exitStatus ?? "?"} result=${job.result ?? "?"}\n  command: ${indentContinuations(job.command)}`,
 			}],
 			details: { job: { ...job } },
 		};
@@ -205,22 +206,9 @@ export async function handleStatus(jobs: Map<string, Job>, backend: Backend, _ct
 			details: { count: 0, hidden: jobs.size },
 		};
 	}
-	const lines = ["id                                state      exit  result         label           runtime"];
-	const now = Date.now();
-	const sorted = [...list].sort((a, b) => b.startedAt - a.startedAt);
-	for (const job of sorted) {
-		const runtime = job.finishedAt ? job.finishedAt - job.startedAt : now - job.startedAt;
-		lines.push(
-			`${pad(job.id, 34)} ${pad(formatState(job.state), 10)} ${pad(job.exitStatus?.toString() ?? "-", 5)} ${pad(job.result ?? "-", 14)} ${pad(job.label, 15)} ${humanDuration(runtime)}`,
-		);
-	}
-	const hidden = jobs.size - list.length;
-	if (hidden > 0) {
-		lines.push(`… ${hidden} older terminal job${hidden === 1 ? "" : "s"} hidden. Pass filter="all" to show them.`);
-	}
 	return {
-		content: [{ type: "text", text: lines.join("\n") }],
-		details: { count: list.length, hidden, filter },
+		content: [{ type: "text", text: formatJobTable(list, jobs.size, `Pass filter="all" to show them.`) }],
+		details: { count: list.length, hidden: jobs.size - list.length, filter },
 	};
 }
 
@@ -293,8 +281,32 @@ export async function handleJournal(jobs: Map<string, Job>, backend: Backend, _c
  * ------------------------------------------------------------------ */
 
 const RECENT_JOB_WINDOW_MS = 5 * 60 * 1000;
+const COMMAND_COL = 40;
+export const COMMAND_PREVIEW_CHARS = 200;
 
-function filterActive(jobs: Map<string, Job>): Job[] {
+/** Renders the job table shared by the background_status tool and
+ *  the /jobs command, so their columns cannot drift. `allHint` lets
+ *  each caller name its own "show everything" affordance (tool
+ *  parameter vs slash-command argument); `total` is the size of the
+ *  unfiltered job map, used only for the hidden-count footnote. */
+export function formatJobTable(list: Job[], total: number, allHint: string): string {
+	const lines = [`${pad("id", 34)} ${pad("state", 10)} ${pad("exit", 5)} ${pad("result", 14)} ${pad("label", 15)} ${pad("command", COMMAND_COL)} runtime`];
+	const now = Date.now();
+	const sorted = [...list].sort((a, b) => b.startedAt - a.startedAt);
+	for (const job of sorted) {
+		const runtime = job.finishedAt ? job.finishedAt - job.startedAt : now - job.startedAt;
+		lines.push(
+			`${pad(job.id, 34)} ${pad(formatState(job.state), 10)} ${pad(job.exitStatus?.toString() ?? "-", 5)} ${pad(job.result ?? "-", 14)} ${pad(job.label, 15)} ${pad(oneLine(job.command), COMMAND_COL)} ${humanDuration(runtime)}`,
+		);
+	}
+	const hidden = total - sorted.length;
+	if (hidden > 0) {
+		lines.push(`… ${hidden} older terminal job${hidden === 1 ? "" : "s"} hidden. ${allHint}`);
+	}
+	return lines.join("\n");
+}
+
+export function filterActive(jobs: Map<string, Job>): Job[] {
 	const now = Date.now();
 	const out: Job[] = [];
 	for (const job of jobs.values()) {
@@ -325,6 +337,23 @@ export function humanDuration(ms: number): string {
 
 function pad(s: string, width: number): string {
 	return s.length >= width ? `${s.slice(0, width - 1)}…` : s + " ".repeat(width - s.length);
+}
+
+/** Collapses a command onto one line for table cells and
+ *  notification previews; the single-job status view keeps the
+ *  original newlines. */
+export function oneLine(s: string): string {
+	return s.replace(/\s+/g, " ").trim();
+}
+
+/** Indents continuation lines so a multi-line command stays a
+ *  readable block under the `command:` label. */
+function indentContinuations(s: string): string {
+	return s.replace(/\n/g, "\n    ");
+}
+
+export function trunc(s: string, max: number): string {
+	return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
 function slugify(label: string): string {

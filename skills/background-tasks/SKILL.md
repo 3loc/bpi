@@ -147,6 +147,7 @@ working on.
 </system-reminder>
 
 [background-tasks] make (run-…) — completed — exit=0 — 32.5s
+command: make test
 ```
 
 Right move: `background_journal`, then continue.
@@ -183,6 +184,7 @@ briefly acknowledge and stop.
 </system-reminder>
 
 [background-tasks] wait-for-hello2 (run-…) — completed — exit=0 — 28.4s
+command: while [ ! -f /tmp/hello2 ]; do sleep 1; done
 ```
 
 Right move: follow the `nextStep`. If the next step is empty,
@@ -217,9 +219,12 @@ result.
 | `id` | none | Omit to list all jobs. |
 | `filter` | `"active"` | `"all"` to include older terminal jobs. |
 
-When `id` is given, returns `{state, exit, result}` and reconciles
-the in-memory map. Without `id`, returns a table (also what `/jobs`
-prints) sorted by start time, with active jobs first.
+When `id` is given, returns `{state, exit, result}` plus the
+job's full command (newlines indented — the authoritative readback
+of what was started) and reconciles the in-memory map. Without
+`id`, returns a table (also what `/jobs` prints) sorted by start
+time, with active jobs first; a truncated one-line `command`
+column identifies each job without re-reading history.
 
 ### `background_wait`
 
@@ -264,6 +269,7 @@ When a job reaches a terminal state, the watcher fires a
 </system-reminder>
 
 [background-tasks] <label> (<id>) — <state> — exit=<n> result=<reason> — <duration>
+command: <one-line preview, truncated at 200 chars>
 
 --- last 200 chars of journal ---
 <tail>
@@ -279,7 +285,7 @@ The `details` payload is also structured:
 
 ```typescript
 {
-  id, label, state, exitStatus, result,
+  id, label, command, state, exitStatus, result,
   durationMs, startedAt, finishedAt, notify,
 }
 ```

@@ -70,12 +70,17 @@ import {
 	WaitParamsSchema,
 } from "./schemas.ts";
 import {
+	COMMAND_PREVIEW_CHARS,
+	filterActive,
+	formatJobTable,
 	handleCancel,
 	handleJournal,
 	handleRun,
 	handleStatus,
 	humanDuration,
 	handleWait,
+	oneLine,
+	trunc,
 	type ToolContext,
 } from "./tools.ts";
 
@@ -155,6 +160,10 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		const resultLine = job.result ? ` result=${job.result}` : "";
 		const timeMs = (job.finishedAt ?? Date.now()) - job.startedAt;
 		const header = `[background-tasks] ${job.label} (${job.id}) — ${status} — ${exitLine}${resultLine} — ${humanDuration(timeMs)}`;
+		// The notification lands on a later turn, where the original
+		// background_run call may be far back in history — restate the
+		// command so the verdict is self-contained.
+		const commandLine = `\ncommand: ${trunc(oneLine(job.command), COMMAND_PREVIEW_CHARS)}`;
 		const tailOutput = job.outputFile ? `\n\nFull output: ${job.outputFile}` : "";
 		const tail = preview ? `\n\n--- last ${RESULT_PREVIEW_CHARS} chars of journal ---\n${preview}` : "";
 
@@ -170,11 +179,12 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		pi.sendMessage(
 			{
 				customType: JOB_RESULT_CUSTOM_TYPE,
-				content: `${framing}\n\n${header}${tailOutput}${tail}`,
+				content: `${framing}\n\n${header}${commandLine}${tailOutput}${tail}`,
 				display: true,
 				details: {
 					id: job.id,
 					label: job.label,
+					command: job.command,
 					state: job.state,
 					exitStatus: job.exitStatus,
 					result: job.result,
@@ -392,18 +402,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		}
 		const visible = filter === "all" ? [...jobs.values()] : filterActive(jobs);
 		if (visible.length === 0) return undefined;
-		const lines = ["id                                state      exit  result         label           runtime"];
-		const now = Date.now();
-		const sorted = visible.sort((a, b) => b.startedAt - a.startedAt);
-		for (const job of sorted) {
-			const runtime = job.finishedAt ? job.finishedAt - job.startedAt : now - job.startedAt;
-			lines.push(`${pad(job.id, 34)} ${pad(job.state, 10)} ${pad(job.exitStatus?.toString() ?? "-", 5)} ${pad(job.result ?? "-", 14)} ${pad(job.label, 15)} ${humanDuration(runtime)}`);
-		}
-		const hidden = jobs.size - visible.length;
-		if (hidden > 0) {
-			lines.push(`… ${hidden} older terminal job${hidden === 1 ? "" : "s"} hidden. Run /jobs all to show them.`);
-		}
-		return lines.join("\n");
+		return formatJobTable(visible, jobs.size, "Run /jobs all to show them.");
 	}
 
 	/* ----- lifecycle hooks ---------------------------------------- */
@@ -440,23 +439,6 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 }
 
 /* ------------------------------------------------------------------ *
- * Helpers                                                             *
+ * (no extra helpers — formatJobTable / filterActive / pad / trunc     *
+ *  all live in tools.ts so they cannot drift between call sites)     *
  * ------------------------------------------------------------------ */
-
-function filterActive(jobs: Map<string, Job>): Job[] {
-	const now = Date.now();
-	const out: Job[] = [];
-	for (const job of jobs.values()) {
-		if (!isTerminal(job.state)) {
-			out.push(job);
-			continue;
-		}
-		const finishedAt = job.finishedAt ?? job.startedAt;
-		if (now - finishedAt <= RECENT_JOB_WINDOW_MS) out.push(job);
-	}
-	return out;
-}
-
-function pad(s: string, width: number): string {
-	return s.length >= width ? `${s.slice(0, width - 1)}…` : s + " ".repeat(width - s.length);
-}
