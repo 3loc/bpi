@@ -165,7 +165,7 @@ else
 fi
 
 # Check 2f: tools-check lint over every extension's pi.registerTool
-# call. Structural guard for the REGRESSION.md bug class (passing a
+# call. Structural guard against passing a
 # TypeScript interface or other type-only construct as parameters
 # -- the LLM provider then receives undefined and rejects tool calls
 # with 400).

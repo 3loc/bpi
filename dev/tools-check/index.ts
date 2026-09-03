@@ -1,9 +1,9 @@
 /**
  * tools-check extension for the pi coding agent.
  *
- * Wraps the structural lint called for by REGRESSION.md (the d6760e5
- * background-tasks bug -- passing TypeScript interfaces as parameters
- * to pi.registerTool). REGRESSION.md classifies this as a class of bug
+ * Wraps the structural lint born from the d6760e5 background-tasks
+ * bug -- passing TypeScript interfaces as parameters
+ * to pi.registerTool. It targets a class of bug
  * the existing tests cannot catch at the repo level: tsc would compile
  * it, the handler unit tests exercise handlers directly without going
  * through pi.registerTool, and the headless verify checks only confirm
@@ -25,8 +25,7 @@
  * Out of scope for this extension: a real TypeScript compiler. A full
  * tsc pass would catch every category of misuse, but at the cost of
  * adding the typescript package (~70 MB) just for one lint. The text
- * scan catches the documented bug class plus every pattern
- * REGRESSION.md enumerates.
+ * scan catches that bug class and its type-only variants.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -41,7 +40,7 @@ export default function toolsCheckExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("tools-check", {
-		description: "Scan every extension's pi.registerTool(...) call for the REGRESSION.md bug class (parameters passed as TS type-only values)",
+		description: "Scan every extension's pi.registerTool(...) call for the type-only parameters bug class (parameters passed as TS type-only values)",
 		handler: async (_args, ctx) => {
 			const root = resolvePath(process.cwd());
 			const result = checkTools(root);

@@ -5,7 +5,7 @@
  *   - `checkTools` accepts the current extensions (sanity check: no
  *     false positives against the existing repo).
  *   - The scanner rejects the original bug class (parameters: <interface>)
- *     and the documented failure modes from REGRESSION.md.
+ *     and the other type-only failure modes.
  *   - Inline `Type.Object({...})` literals and imported `Type.Object(...)`
  *     bindings both pass — both are the recommended shapes.
  *   - The `@tools-check-ok` opt-out is honored.

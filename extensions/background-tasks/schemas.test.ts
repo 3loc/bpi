@@ -186,8 +186,8 @@ describe("tool / handler / schema alignment", () => {
 		// The interfaces in tools.ts are TypeScript-only, so we cannot
 		// inspect them at runtime. Instead, the source-level contract is
 		// asserted by the property-name check above plus the lint that
-		// RunParamsSchema exists. A future source-level checker (see
-		// REGRESSION.md) is the next layer.
+		// RunParamsSchema exists. A future source-level checker
+		// is the next layer.
 		assert.ok(mod === undefined || typeof mod === "object", "tools.ts importable");
 	});
 });

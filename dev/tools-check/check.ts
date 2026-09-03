@@ -1,6 +1,6 @@
 // Tool-parameter schema scanner.
 //
-// Structural lint called for by REGRESSION.md (the d6760e5
+// Structural lint born from the d6760e5
 // background-tasks bug -- passing TypeScript interfaces as
 // `parameters:` to pi.registerTool). The bug class is "the RHS of
 // parameters is a TypeScript type-only construct that the runtime
@@ -10,8 +10,8 @@
 //
 // Out of scope: a full TypeScript compiler. With tsc in the loop,
 // this text scan becomes redundant -- ship tsc instead. Without it,
-// the source-text walker reaches the documented bug class plus
-// every pattern REGRESSION.md enumerates.
+// the source-text walker covers that bug class and its type-only
+// variants.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
@@ -416,7 +416,7 @@ function resolveImportedIdentifier(name: string, sourceFile: string, sourceLines
 	if (new RegExp(`\\bimport\\s*\\{[^}]*\\btype\\s+${name}\\b[^}]*\\}`).test(source)) {
 		return {
 			kind: "imported-bad",
-			detail: `${name} is type-only imported (\`import { type ${name} }\`); a TypeScript type-only import has no runtime value, so the LLM provider would reject tool calls with "function parameters is empty" (400) -- see REGRESSION.md`,
+			detail: `${name} is type-only imported (\`import { type ${name} }\`); a TypeScript type-only import has no runtime value, so the LLM provider would reject tool calls with "function parameters is empty" (400)`,
 		};
 	}
 	return { kind: "unresolved", detail: `identifier "${name}" has no import binding in ${relativeModulePath(sourceFile)}` };
@@ -465,7 +465,7 @@ function inspectTargetModule(modulePath: string, name: string): ResolvedKind {
 	}
 	// export interface NAME or export type NAME = ... -- the original bug.
 	if (new RegExp(`\\bexport\\s+(?:interface|type)\\s+${name}\\b`).test(text)) {
-		return { kind: "imported-bad", detail: `${name} is a TypeScript type-only export (interface or type alias); runtime value would be undefined and the LLM provider would reject tool calls with "function parameters is empty" (400) -- see REGRESSION.md` };
+		return { kind: "imported-bad", detail: `${name} is a TypeScript type-only export (interface or type alias); runtime value would be undefined and the LLM provider would reject tool calls with "function parameters is empty" (400)` };
 	}
 	return { kind: "unresolved", detail: `identifier "${name}" import binding not satisfied by any export in ${relativeModulePath(modulePath)}` };
 }
