@@ -119,6 +119,70 @@ describe("SystemdBackend.status", () => {
 	});
 });
 
+describe("SystemdBackend.wait", () => {
+	it("polls ActiveState in one timeout-wrapped exec and reconciles via status", async () => {
+		const captured: { cmd: string; args: string[] }[] = [];
+		const exec: ExecFn = async (cmd, args) => {
+			captured.push({ cmd, args });
+			if (cmd === "systemctl") {
+				return { code: 0, stdout: "ActiveState=inactive\nResult=success\nExecMainStatus=0\n", stderr: "" };
+			}
+			return { code: 0, stdout: "", stderr: "" };
+		};
+		const b = new SystemdBackend(exec, ctx);
+		const snap = await b.wait("run-w.service", "completed", 5_000);
+		assert.equal(snap?.state, "completed");
+		assert.equal(captured.length, 2, "one poll exec + one status exec");
+		const [poll, statusCall] = captured;
+		assert.equal(poll.cmd, "timeout");
+		assert.equal(poll.args[0], "5s");
+		assert.equal(poll.args[1], "bash");
+		assert.equal(poll.args[2], "-c");
+		assert.match(poll.args[3], /show 'run-w\.service'/);
+		assert.match(poll.args[3], /inactive\|failed/);
+		assert.equal(statusCall.cmd, "systemctl");
+	});
+
+	it("returns undefined when the deadline expires with the unit still running", async () => {
+		// timeout(1) exits 124; status says active.
+		const exec: ExecFn = async (cmd) =>
+			cmd === "timeout"
+				? { code: 124, stdout: "", stderr: "" }
+				: { code: 0, stdout: "ActiveState=active\nActiveEnterTimestampMonotonic=42\n", stderr: "" };
+		const b = new SystemdBackend(exec, ctx);
+		assert.equal(await b.wait("run-r.service", "completed", 1_000), undefined);
+	});
+
+	it("returns undefined when the unit is unknown to the substrate (garbage-collected)", async () => {
+		const exec: ExecFn = async (cmd) =>
+			cmd === "timeout" ? { code: 1, stdout: "", stderr: "" } : { code: 1, stdout: "", stderr: "Unit not found" };
+		const b = new SystemdBackend(exec, ctx);
+		assert.equal(await b.wait("run-gone.service", "completed", 1_000), undefined);
+	});
+
+	it("treats failed as satisfying a wait for a terminal state", async () => {
+		const exec: ExecFn = async (cmd) =>
+			cmd === "timeout"
+				? { code: 0, stdout: "", stderr: "" }
+				: { code: 0, stdout: "ActiveState=failed\nResult=exit-code\nExecMainStatus=3\n", stderr: "" };
+		const b = new SystemdBackend(exec, ctx);
+		const snap = await b.wait("run-f.service", "completed", 1_000);
+		assert.equal(snap?.state, "failed");
+		assert.equal(snap?.exitStatus, 3);
+	});
+
+	it("refuses unit ids outside the unit-name alphabet (shell-embedding defense)", async () => {
+		let calls = 0;
+		const exec: ExecFn = async () => {
+			calls++;
+			return { code: 0, stdout: "", stderr: "" };
+		};
+		const b = new SystemdBackend(exec, ctx);
+		await assert.rejects(() => b.wait("run-x.service; rm -rf /", "completed", 1_000), /unsafe unit id/);
+		assert.equal(calls, 0, "must reject before any exec");
+	});
+});
+
 describe("SystemdBackend.cancel", () => {
 	it("uses systemctl stop by default (SIGTERM → SIGKILL after TimeoutStopSec)", async () => {
 		let captured: string[] = [];

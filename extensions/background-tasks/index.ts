@@ -247,7 +247,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		name: "background_wait",
 		label: "background wait",
 		description:
-			"Block until a job reaches a target state (default `completed`). Implemented via the backend's race-free wait primitive. Distinct from the watcher's completion notification — this blocks the calling turn; the watcher fires on a future turn.",
+			"Block until a job reaches a target state (default `completed`). Implemented via the backend's blocking wait (a bounded poll of ground-truth status where the substrate has no native wait verb). Distinct from the watcher's completion notification — this blocks the calling turn; the watcher fires on a future turn.",
 		parameters: WaitParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			return handleWait(jobs, backend!, toolContext(), params);

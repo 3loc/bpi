@@ -225,7 +225,13 @@ export async function handleWait(jobs: Map<string, Job>, backend: Backend, _ctx:
 	const state = (params.state as JobState | undefined) ?? "completed";
 	const timeoutMs = params.timeoutMs ?? 24 * 60 * 60 * 1000;
 
-	const final = await backend.wait(job.id, state, timeoutMs);
+	let final = await backend.wait(job.id, state, timeoutMs);
+	if (!final && isTerminal(job.state)) {
+		// systemd garbage-collects finished transient units; when the
+		// substrate no longer knows the job, the session's own record is
+		// the verdict.
+		final = { state: job.state, exitStatus: job.exitStatus, result: job.result };
+	}
 	if (!final) {
 		throw new Error(`Wait timed out after ${humanDuration(timeoutMs)} — job ${job.id} did not reach ${state}.`);
 	}

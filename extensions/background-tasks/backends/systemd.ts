@@ -14,7 +14,7 @@
  * documents this.
  */
 
-import { extractUnitName, parseShowOutput, type StatusSnapshot } from "../state.ts";
+import { extractUnitName, isTerminal, parseShowOutput, type JobState, type StatusSnapshot } from "../state.ts";
 import type { Backend, BackendCapabilities, JournalChunk, JournalOptions, LaunchRequest, LaunchResult } from "../backend.ts";
 
 /** Minimal subprocess contract — pi.exec in production, a recorder in
@@ -91,20 +91,34 @@ export class SystemdBackend implements Backend {
 		return parseShowOutput(result.stdout);
 	}
 
-	/** Pre-built for `wait` — accepts the JobState enum and translates
-	 *  it to the matching systemctl wait target. The abstraction's
-	 *  JobState is "the canonical state machine"; systemctl's --state=
-	 *  takes "active", "inactive", "failed". This is the one place that
-	 *  vocabulary translation happens. */
-	async wait(id: string, state: import("../state.ts").JobState, timeoutMs: number): Promise<StatusSnapshot | undefined> {
-		const target = mapStateToSystemdWait(state);
-		const result = await this.exec(
-			"systemctl",
-			this.argsFor("wait", id, `--state=${target}`, `--timeout=${Math.ceil(timeoutMs / 1000)}s`),
-			{ timeout: timeoutMs + 5_000 },
-		);
-		if (result.code !== 0) return undefined;
-		return this.status(id);
+	/** Bounded poll + reconcile. `systemctl` has no wait verb (verified
+	 *  against systemd 261: "Unknown command verb 'wait'"), so the native
+	 *  blocking primitive this method used to call never existed. A poll
+	 *  of ActiveState cannot miss a terminal target because terminal
+	 *  states are absorbing — once a unit reads inactive/failed it reads
+	 *  that way forever — so polling ground-truth `show` is equivalent
+	 *  to a blocking wait for terminal targets. Transient targets
+	 *  ("running") are best-effort: a unit that finishes between polls
+	 *  reads as inactive and the reconcile step reports "did not reach
+	 *  running". The poll runs inside one `timeout`-wrapped exec to
+	 *  honor the ExecFn contract (one process that exits on its own);
+	 *  the exec-level timeout is a backstop, not the primary bound. */
+	async wait(id: string, state: JobState, timeoutMs: number): Promise<StatusSnapshot | undefined> {
+		assertShellSafeUnitId(id);
+		const accept = mapStateToActiveState(state) === "inactive" ? "inactive|failed" : "active";
+		const poll =
+			`while :; do ` +
+			`s=$(systemctl --user show '${id}' --property=ActiveState --value 2>/dev/null) || exit 1; ` +
+			`case "$s" in ${accept}) exit 0;; esac; ` +
+			`sleep 0.25; ` +
+			`done`;
+		await this.exec("timeout", [`${Math.ceil(timeoutMs / 1000)}s`, "bash", "-c", poll], {
+			timeout: timeoutMs + 5_000,
+		}).catch(() => undefined);
+		// The snapshot decides, not the poll's exit code — it is ground
+		// truth whether the poll hit, timed out, or failed outright.
+		const snap = await this.status(id).catch(() => undefined);
+		return snap && waitSatisfied(snap.state, state) ? snap : undefined;
 	}
 
 	async cancel(id: string, signal: "SIGTERM" | "SIGKILL" = "SIGTERM"): Promise<void> {
@@ -142,11 +156,11 @@ export class SystemdBackend implements Backend {
 	}
 }
 
-/** Translate the canonical state machine into the systemd wait target.
- *  "inactive" is the most useful generic wait — it means "done or
- *  failed, whichever comes first." The abstraction also accepts the
- *  canonical names directly. */
-function mapStateToSystemdWait(state: import("../state.ts").JobState): string {
+/** Translate the canonical state machine into the ActiveState value a
+ *  wait polls for. "inactive" is the useful generic terminal — it
+ *  covers done, failed, timeout, and cancelled; the reconciled
+ *  snapshot carries the precise verdict. */
+function mapStateToActiveState(state: JobState): "active" | "inactive" {
 	switch (state) {
 		case "completed":
 		case "failed":
@@ -156,5 +170,21 @@ function mapStateToSystemdWait(state: import("../state.ts").JobState): string {
 		case "starting":
 		case "running":
 			return "active";
+	}
+}
+
+/** A wait for a terminal state is satisfied by any terminal state;
+ *  a wait for "active" only by the parsed running state. */
+function waitSatisfied(snapState: JobState, target: JobState): boolean {
+	return mapStateToActiveState(target) === "inactive" ? isTerminal(snapState) : snapState === "running";
+}
+
+/** Unit ids come from our own extractUnitName, but wait() embeds the
+ *  id in a shell string — refuse anything outside systemd's unit-name
+ *  alphabet as defense in depth. */
+const SHELL_SAFE_UNIT_ID = /^[A-Za-z0-9@:_.-]+$/;
+function assertShellSafeUnitId(id: string): void {
+	if (!SHELL_SAFE_UNIT_ID.test(id)) {
+		throw new Error(`Refusing to embed unsafe unit id in a shell command: ${JSON.stringify(id)}`);
 	}
 }

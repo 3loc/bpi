@@ -13,10 +13,12 @@
  *     (the command exited non-zero) are NOT thrown — they surface as
  *     StatusSnapshot with state="failed" and exitStatus set.
  *   - All timeouts are wall-clock milliseconds.
- *   - `wait()` MUST be race-free (use the substrate's native wait
- *     primitive, not a polling loop). The systemd backend uses
- *     `systemctl --user wait`; the in-process backend uses an
- *     EventEmitter. Anything that polls is wrong.
+ *   - `wait()` must not be able to MISS the target state. Prefer the
+ *     substrate's native blocking primitive where one exists (the
+ *     in-process backend uses an EventEmitter). systemd's CLI has no
+ *     wait verb, so its backend polls ground-truth status inside one
+ *     bounded exec — sound for terminal targets because terminal
+ *     states are absorbing; transient targets are best-effort.
  *   - `journal()` MUST refuse to truncate silently — if the requested
  *     window exceeds maxChars, it throws. Callers narrow the window.
  */
