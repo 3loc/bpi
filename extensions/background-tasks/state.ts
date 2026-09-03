@@ -26,6 +26,11 @@ export function isTerminal(state: JobState): boolean {
 	return TERMINAL_STATES.includes(state);
 }
 
+/** How the completion notification should be framed when the
+ *  watcher fires it back into the model. Mirrors the `notify`
+ *  parameter on background_run. */
+export type NotifyMode = "fulfillment" | "watcher";
+
 /** The in-memory entry the extension manages. Keyed by backend id
  *  (unit name for systemd, container id for docker, …). The state
  *  field is what the watcher maintains; the rest is what the caller
@@ -39,6 +44,8 @@ export interface Job {
 	startedAt: number;
 	timeoutMs?: number;
 	outputFile?: string;
+	notify: NotifyMode;
+	nextStep?: string;
 	state: JobState;
 	exitStatus?: number;
 	result?: string;

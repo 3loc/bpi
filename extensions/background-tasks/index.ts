@@ -124,9 +124,16 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		jobs.clear();
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type !== "custom" || entry.customType !== JOB_ENTRY_TYPE) continue;
-			const data = entry.data as { job?: Job } | undefined;
+			const data = entry.data as { job?: Partial<Job> } | undefined;
 			if (!data?.job?.id) continue;
-			jobs.set(data.job.id, { ...data.job });
+			// Defensive defaults for fields added after the entry was
+			// persisted — old sessions lack `notify` and `nextStep`,
+			// which the publish path now relies on.
+			const job: Job = {
+				notify: "fulfillment",
+				...data.job,
+			} as Job;
+			jobs.set(job.id, job);
 		}
 	}
 
@@ -151,11 +158,19 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		const tailOutput = job.outputFile ? `\n\nFull output: ${job.outputFile}` : "";
 		const tail = preview ? `\n\n--- last ${RESULT_PREVIEW_CHARS} chars of journal ---\n${preview}` : "";
 
+		// Frame the notification based on the mode the caller asked for.
+		// The mode is a single decision the model needs to make when the
+		// notification arrives: is it expected to act on this (fulfillment),
+		// or to decide whether to act (watcher)? pi core drops the
+		// structured `details` payload on the way to the LLM, so the
+		// framing has to ride on `content` itself.
+		const framing = frameNotification(job);
+
 		persistJob(job);
 		pi.sendMessage(
 			{
 				customType: JOB_RESULT_CUSTOM_TYPE,
-				content: `${header}${tailOutput}${tail}`,
+				content: `${framing}\n\n${header}${tailOutput}${tail}`,
 				display: true,
 				details: {
 					id: job.id,
@@ -166,10 +181,21 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 					durationMs: timeMs,
 					startedAt: job.startedAt,
 					finishedAt: job.finishedAt,
+					notify: job.notify,
 				},
 			},
 			{ triggerTurn: true, deliverAs: "followUp" },
 		);
+	}
+
+	function frameNotification(job: Job): string {
+		if (job.notify === "watcher") {
+			const step = job.nextStep?.trim()
+				? `\nNext step specified at launch: ${job.nextStep}`
+				: "\nNo next step was specified at launch — decide whether this is relevant to your current task, defer, or surface to the user.";
+			return `<system-reminder type="background-watcher">A background job you launched asynchronously has finished. This is not necessarily relevant to your current task — evaluate the outcome and the user's intent before acting.${step}\n\nIf you decide the job's result is relevant, act on it. If not, briefly acknowledge and stop.</system-reminder>`;
+		}
+		return `<system-reminder type="background-fulfillment">A background job you launched to fulfill your current request has finished. You are expected to act on its result — read the journal (background_journal), then continue the task you were working on. Use background_status or background_journal for more detail.</system-reminder>`;
 	}
 
 	/* ----- watcher -------------------------------------------------- */

@@ -21,7 +21,7 @@
  */
 
 import type { Backend, BackendCapabilities } from "./backend.ts";
-import type { Job, JobState } from "./state.ts";
+import type { Job, JobState, NotifyMode } from "./state.ts";
 import { isTerminal, TERMINAL_STATES } from "./state.ts";
 
 /* ------------------------------------------------------------------ *
@@ -42,6 +42,8 @@ export interface RunParams {
 	timeoutMs?: number;
 	outputFile?: boolean | string;
 	system?: boolean;
+	notify?: NotifyMode;
+	nextStep?: string;
 }
 
 export interface StatusParams {
@@ -87,9 +89,11 @@ export interface JobLaunchResult {
  * Handlers                                                            *
  * ------------------------------------------------------------------ */
 
-export async function handleRun(jobs: Map<string, Job>, backend: Backend, ctx: ToolContext, params: { command: string; label?: string; workingDirectory?: string; timeoutMs?: number; outputFile?: boolean | string; system?: boolean }): Promise<JobLaunchResult> {
+export async function handleRun(jobs: Map<string, Job>, backend: Backend, ctx: ToolContext, params: { command: string; label?: string; workingDirectory?: string; timeoutMs?: number; outputFile?: boolean | string; system?: boolean; notify?: NotifyMode; nextStep?: string }): Promise<JobLaunchResult> {
 	const scope = params.system === true ? "system" : "user";
 	const label = (params.label ?? params.command.split(/\s+/)[0] ?? "job").slice(0, 80);
+	const notify: NotifyMode = params.notify === "watcher" ? "watcher" : "fulfillment";
+	const nextStep = notify === "watcher" ? params.nextStep : undefined;
 
 	let workingDirectory = params.workingDirectory;
 	if (!workingDirectory) workingDirectory = ctx.cwd;
@@ -123,6 +127,8 @@ export async function handleRun(jobs: Map<string, Job>, backend: Backend, ctx: T
 		startedAt: Date.now(),
 		timeoutMs: params.timeoutMs,
 		outputFile,
+		notify,
+		nextStep,
 		state: "starting",
 	};
 	jobs.set(result.id, job);
@@ -132,13 +138,14 @@ export async function handleRun(jobs: Map<string, Job>, backend: Backend, ctx: T
 		`  workingDirectory: ${workingDirectory}`,
 		params.timeoutMs !== undefined ? `  timeout: ${humanDuration(params.timeoutMs)}` : "",
 		outputFile ? `  outputFile: ${outputFile}` : "",
+		`  notify: ${notify}${nextStep ? ` (nextStep: ${nextStep})` : ""}`,
 		``,
 		`A completion notification arrives on the next turn when the job reaches a terminal state. Use background_status to inspect, background_wait to block.`,
 	].filter(Boolean).join("\n");
 
 	return {
 		content: [{ type: "text", text: summary }],
-		details: { id: result.id, label, scope, timeoutMs: params.timeoutMs, outputFile },
+		details: { id: result.id, label, scope, timeoutMs: params.timeoutMs, outputFile, notify, nextStep },
 	};
 }
 

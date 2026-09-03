@@ -109,9 +109,106 @@ but not across sessions (a new session has no in-memory jobs).
 | `timeoutMs` | none | The watcher enforces this deadline independently of any backend-side timer. |
 | `outputFile` | none | `true` → `${HOME}/.cache/background-tasks/<label>.log`; string → that path. Captures combined stdout+stderr. |
 | `system` | `false` | `true` = system scope (root, PID 1). Needs polkit. Avoid unless you've explicitly decided you need it. |
+| `notify` | `"fulfillment"` | How the completion notification is framed. `"fulfillment"` — you launched this to satisfy your current request; act on the result. `"watcher"` — autonomous background job whose relevance you must evaluate when it finishes. See *Two patterns* below. |
+| `nextStep` | none | Free-form instruction carried into the watcher-mode notification. Tells the model what to do when the watcher job finishes (e.g. `"read the journal and report whether the build passed"`). Ignored when `notify="fulfillment"`. |
 
-Returns immediately with `{id, label, scope, timeoutMs, outputFile}`.
+Returns immediately with `{id, label, scope, timeoutMs, outputFile, notify, nextStep}`.
 The id is the substrate's handle (a unit name for systemd).
+
+## Two patterns: fulfillment vs watcher
+
+The same `background_run` tool covers two distinct mental modes.
+Pick the mode at launch by setting `notify`; the watcher uses it
+to frame the completion notification correctly, which is the only
+thing that lets the model decide whether to act immediately or
+evaluate first.
+
+### Fulfillment — "I'm doing this for the current task"
+
+Use this when you launch a job as part of fulfilling the user's
+current request — a build you need to inspect, a test run you
+need to summarize, a long download you depend on. The job id is
+in your working memory; when it finishes, you are expected to
+read the journal and continue.
+
+```typescript
+background_run({ command: "make test", timeoutMs: 600_000 })
+// notify defaults to "fulfillment"
+```
+
+The completion notification arrives framed as:
+
+```
+<system-reminder type="background-fulfillment">
+A background job you launched to fulfill your current request
+has finished. You are expected to act on its result — read the
+journal (background_journal), then continue the task you were
+working on.
+</system-reminder>
+
+[background-tasks] make (run-…) — completed — exit=0 — 32.5s
+```
+
+Right move: `background_journal`, then continue.
+
+### Watcher — "this is autonomous; tell me when something happens"
+
+Use this when you launch a job whose outcome may or may not be
+relevant to your current task — polling for a file, waiting on a
+remote sync, watching for a process to exit. Pass `notify:
+"watcher"` and, importantly, a `nextStep` that tells the future
+you what to do when the notification fires:
+
+```typescript
+background_run({
+  command: "while [ ! -f /tmp/hello2 ]; do sleep 1; done",
+  notify: "watcher",
+  nextStep: "report whether /tmp/hello2 appeared and what its contents are",
+})
+```
+
+The completion notification arrives framed as:
+
+```
+<system-reminder type="background-watcher">
+A background job you launched asynchronously has finished. This
+is not necessarily relevant to your current task — evaluate the
+outcome and the user's intent before acting.
+
+Next step specified at launch: report whether /tmp/hello2
+appeared and what its contents are
+
+If you decide the job's result is relevant, act on it. If not,
+briefly acknowledge and stop.
+</system-reminder>
+
+[background-tasks] wait-for-hello2 (run-…) — completed — exit=0 — 28.4s
+```
+
+Right move: follow the `nextStep`. If the next step is empty,
+decide whether to act, defer, or surface to the user.
+
+### Choosing between them
+
+If the job's output is *the answer to the user's current request*
+in any direct sense, use `fulfillment`. If the job is *an event
+detector* whose result is metadata about the world, use `watcher`.
+When in doubt, default is `fulfillment` — that's the safer mode
+because the notification tells the model to act; a watcher
+notification that the model misreads as fulfillment causes the
+opposite problem (premature action on unverified state).
+
+### The `<system-reminder type="…">` envelope
+
+The completion notification is a `<system-reminder>` whose `type`
+attribute is one of `background-fulfillment` or
+`background-watcher`. pi core's `convertToLlm` drops this through
+as plain text in a user-role message — it is **not** a wire-
+protocol instruction, it is a **convention this skill documents**.
+Recognise the type, react accordingly. The watcher mode's
+`<system-reminder>` also carries the `nextStep` you set at
+launch, so you do not need to remember what to do with the
+result.
 
 ### `background_status`
 
@@ -162,6 +259,10 @@ When a job reaches a terminal state, the watcher fires a
 `background-tasks-result` custom message with this shape:
 
 ```
+<system-reminder type="background-fulfillment | background-watcher">
+...framing text + optional nextStep...
+</system-reminder>
+
 [background-tasks] <label> (<id>) — <state> — exit=<n> result=<reason> — <duration>
 
 --- last 200 chars of journal ---
@@ -170,12 +271,16 @@ When a job reaches a terminal state, the watcher fires a
 Full output: <outputFile>      # only if outputFile was set
 ```
 
+The `<system-reminder type="…">` envelope is what tells you which
+of the two patterns the job belongs to; see *Two patterns* above.
+React to the envelope first, then to the data line.
+
 The `details` payload is also structured:
 
 ```typescript
 {
   id, label, state, exitStatus, result,
-  durationMs, startedAt, finishedAt,
+  durationMs, startedAt, finishedAt, notify,
 }
 ```
 
@@ -183,10 +288,11 @@ The `details` payload is also structured:
 `exitStatus` is the command's exit code (or the signal number +
 128, depending on backend). `result` is the backend's reason code
 (`success`, `exit-code`, `signal`, `timeout`, `resources`, …).
+`notify` echoes the mode you set at launch.
 
-When the notification arrives, the right next move is usually: read
-the journal (`background_journal`), decide based on the result, and
-either launch a follow-up job or report success to the user.
+For more journal context than the 200-char tail, call
+`background_journal` (with the `id`). For raw status, call
+`background_status`.
 
 ## Errors that look like configuration but are policy
 

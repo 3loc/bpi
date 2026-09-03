@@ -35,6 +35,18 @@ import { Type } from "typebox";
  *
  * `command` is required and is the only field the LLM must supply;
  * everything else has a sensible default.
+ *
+ * `notify` controls how the completion notification is framed when
+ * the watcher fires it back into the model:
+ *   - "fulfillment" (default): the job was launched to satisfy the
+ *     current request. The notification is framed as "you are
+ *     expected to act on this — read the journal, decide what's
+ *     next, and continue the task you were working on."
+ *   - "watcher": the job is an autonomous background watcher (e.g.
+ *     polling for a file, waiting on a remote sync). The
+ *     notification is framed as "this may or may not be relevant;
+ *     decide whether to act or defer. The next step was specified
+ *     via `nextStep` when the job was launched."
  */
 export const RunParamsSchema = Type.Object({
 	command: Type.String({
@@ -58,6 +70,13 @@ export const RunParamsSchema = Type.Object({
 	], { description: "Where to capture combined stdout+stderr. Omit to discard." })),
 	system: Type.Optional(Type.Boolean({
 		description: "true → run as a transient system unit (PID 1, requires polkit). Default: false (user manager).",
+	})),
+	notify: Type.Optional(Type.String({
+		description: "How the completion notification is framed when the watcher fires it back into the model. 'fulfillment' (default): you launched this to satisfy the current request — act on it. 'watcher': autonomous background job — decide whether to act, defer, or surface to the user; the next step was specified via `nextStep`.",
+		enum: ["fulfillment", "watcher"],
+	})),
+	nextStep: Type.Optional(Type.String({
+		description: "Free-form instruction carried into the watcher-mode completion notification. Tells the model what to do when the job finishes (e.g. 'read the journal and report whether the build passed'). Ignored when notify='fulfillment'.",
 	})),
 });
 

@@ -111,6 +111,49 @@ describe("handleRun", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	it("defaults notify to 'fulfillment' when not specified", async () => {
+		const dir = tmp();
+		try {
+			const backend = new InProcBackend();
+			const jobs = freshMap();
+			const r = await handleRun(jobs, backend, { ...ctx(), cwd: dir }, { command: "exit 0" });
+			assert.equal(jobs.get(r.details.id as string)?.notify, "fulfillment");
+			assert.equal(jobs.get(r.details.id as string)?.nextStep, undefined);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("records notify='watcher' and the nextStep on the job", async () => {
+		const dir = tmp();
+		try {
+			const backend = new InProcBackend();
+			const jobs = freshMap();
+			const r = await handleRun(jobs, backend, { ...ctx(), cwd: dir }, { command: "sleep 5", notify: "watcher", nextStep: "report whether /tmp/hello2 appeared" });
+			const job = jobs.get(r.details.id as string);
+			assert.equal(job?.notify, "watcher");
+			assert.equal(job?.nextStep, "report whether /tmp/hello2 appeared");
+			const text = r.content[0]?.text ?? "";
+			assert.ok(text.includes("notify: watcher"), "summary mentions watcher mode");
+			assert.ok(text.includes("nextStep: report whether"), "summary mentions next step");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("ignores nextStep when notify='fulfillment' (would otherwise be misleading)", async () => {
+		const dir = tmp();
+		try {
+			const backend = new InProcBackend();
+			const jobs = freshMap();
+			const r = await handleRun(jobs, backend, { ...ctx(), cwd: dir }, { command: "exit 0", notify: "fulfillment", nextStep: "ignored" });
+			assert.equal(jobs.get(r.details.id as string)?.notify, "fulfillment");
+			assert.equal(jobs.get(r.details.id as string)?.nextStep, undefined);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("handleStatus", () => {
@@ -149,6 +192,7 @@ describe("handleStatus", () => {
 				scope: "user",
 				startedAt: Date.now() - 10 * 60 * 1000,
 				finishedAt: Date.now() - 10 * 60 * 1000,
+				notify: "fulfillment",
 				state: "completed",
 			});
 			// Plus a fresh active job.

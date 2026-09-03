@@ -57,7 +57,7 @@ describe("background_run schema", () => {
 	it("is a non-empty Type.Object with the expected fields", () => {
 		assertObjectSchema(RunParamsSchema, "RunParamsSchema");
 		const props = propertyNames(RunParamsSchema).sort();
-		assert.deepEqual(props, ["command", "label", "outputFile", "system", "timeoutMs", "workingDirectory"], "RunParamsSchema properties");
+		assert.deepEqual(props, ["command", "label", "nextStep", "notify", "outputFile", "system", "timeoutMs", "workingDirectory"], "RunParamsSchema properties");
 	});
 
 	it("requires command", () => {
@@ -75,6 +75,18 @@ describe("background_run schema", () => {
 
 	it("rejects a non-string command", () => {
 		assert.equal(Value.Check(RunParamsSchema, { command: 42 }), false);
+	});
+
+	it("accepts notify='watcher' with nextStep", () => {
+		assert.equal(Value.Check(RunParamsSchema, { command: "x", notify: "watcher", nextStep: "read journal and report" }), true);
+	});
+
+	it("accepts notify='fulfillment' (the default)", () => {
+		assert.equal(Value.Check(RunParamsSchema, { command: "x", notify: "fulfillment" }), true);
+	});
+
+	it("rejects an unknown notify enum value", () => {
+		assert.equal(Value.Check(RunParamsSchema, { command: "x", notify: "nudge" }), false);
 	});
 });
 

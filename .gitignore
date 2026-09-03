@@ -1,3 +1,8 @@
 node_modules/
 *.log
 .DS_Store
+
+# Working-tree scratch — moved here so they stay off `git status`
+# without being deleted. Re-homing them into git is a deliberate
+# decision, not an accident of an untracked file.
+git-ignore/
