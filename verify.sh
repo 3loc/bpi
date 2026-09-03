@@ -164,6 +164,90 @@ else
 	echo "warn: node not installed — skipping background-tasks test gate"
 fi
 
+# Check 2f: tools-check lint over every extension's pi.registerTool
+# call. Structural guard for the REGRESSION.md bug class (passing a
+# TypeScript interface or other type-only construct as parameters
+# -- the LLM provider then receives undefined and rejects tool calls
+# with 400).
+#
+# The lint lives at dev/tools-check/ (NOT under extensions/, so it
+# doesn't enter the global install list per pi's package
+# configuration). It is loaded on demand for this verification:
+#
+#   isolation   = --no-extensions -e dev/tools-check/index.ts
+#   full-context = -e dev/tools-check/index.ts
+#
+# Both modes use the same /tools-check slash command so we exercise
+# the same code path the headless smoke in Check 2b3 does. If
+# isolation passes but full-context fails, the failure is interaction
+# with another extension or with AGENTS.md injection -- diagnose
+# from the full-context output. If isolation fails, the scanner
+# itself broke.
+#
+# Three layers of defense -- do not collapse into one. The unit-test
+# gate (first line) is the load-bearing check; if it fails the
+# runtime scans are skipped because the lint itself is broken. The
+# two runtime scans catch different classes of regression in the
+# pi-loader path. If the unit-test layer is removed, BOTH runtime
+# scans become load-bearing and the gate degrades; keep all three.
+if command -v node >/dev/null 2>&1; then
+	node_major="$(node -p 'process.versions.node.split(".")[0]')"
+	node_minor="$(node -p 'process.versions.node.split(".")[1]')"
+	if (( node_major >= 23 )) || (( node_major == 22 && node_minor >= 6 )); then
+		# First layer: the scanner's own unit suite. Tests both
+		# happy-path and the documented bug class.
+		if (cd "$REPO_ROOT" && node --test --experimental-strip-types \
+				dev/tools-check/check.test.ts) >/dev/null 2>&1; then
+			# The lint extension must exist for the runtime scans
+			# below to actually load it. If it is missing, the
+			# following branches would silently skip (no /tools-check
+			# command registers, the scan returns no FAIL: lines,
+			# and the gate would lie). Fail loudly instead.
+			if [[ ! -f "$REPO_ROOT/dev/tools-check/index.ts" ]]; then
+				echo "FAIL: dev/tools-check/index.ts missing — runtime scan cannot load the lint extension" >&2
+				exit 1
+			fi
+			# Second layer (isolation): load only the tools-check
+			# extension. No other extension, no AGENTS.md injection.
+			# Pure verifier behaviour.
+			if out_iso="$(cd "$REPO_ROOT" && pi --no-extensions \
+					-e dev/tools-check/index.ts \
+					--no-session -p "/tools-check" 2>&1)"; then
+				if grep -q '^FAIL:' <<<"$out_iso"; then
+					echo "FAIL: tools-check isolation scan reported findings above" >&2
+					printf '%s\n' "$out_iso" >&2
+					exit 1
+				fi
+			else
+				echo "warn: /tools-check isolation mode failed (pi unreachable?) — unit-test gate above is the load-bearing check" >&2
+			fi
+			# Third layer (full context): load the auto-discovered
+			# extension set plus tools-check. Same as a real session
+			# started in this repo.
+			if out_full="$(cd "$REPO_ROOT" && pi -e dev/tools-check/index.ts \
+					--no-session -p "/tools-check" 2>&1)"; then
+				if grep -q '^FAIL:' <<<"$out_full"; then
+					echo "FAIL: tools-check full-context scan reported findings above (isolation passed — likely an interaction bug)" >&2
+					printf '%s\n' "$out_full" >&2
+					exit 1
+				fi
+				echo "ok: tools-check structural lint passed (isolation + full-context)"
+			else
+				echo "warn: /tools-check full-context mode failed (pi unreachable?) — isolation scan above is the load-bearing check" >&2
+			fi
+		else
+			echo "FAIL: tools-check unit tests failed (either the lint itself is broken or the current repo contains a violation); see findings below" >&2
+			(cd "$REPO_ROOT" && node --test --experimental-strip-types \
+				dev/tools-check/check.test.ts) >&2
+			exit 1
+		fi
+	else
+		echo "warn: node $node_major.$node_minor < 22.6 — skipping tools-check lint"
+	fi
+else
+	echo "warn: node not installed — skipping tools-check lint"
+fi
+
 # Check 2c: shellcheck gate on this repo's own shell scripts
 if command -v shellcheck >/dev/null 2>&1; then
 	mapfile -t sh_scripts < <(find "$REPO_ROOT" -type f -name '*.sh' \
