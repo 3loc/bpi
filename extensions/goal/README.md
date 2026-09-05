@@ -10,7 +10,7 @@ until the model marks it complete.
 - **Persistent objective** stored in the session's JSONL via
   `pi.appendEntry` — survives `/resume`, includes the JSONL on `--fork`.
 - **Three LLM-callable tools**: `goal_get`, `goal_set`, `goal_update`.
-- **Token and time budget accounting** with per-turn deltas charged on
+- **Token and time budget accounting** with per-response usage charged on
   every assistant message.
 - **Six-state status enum** (`active | paused | blocked | usage_limited
   | budget_limited | complete`), each with distinct runtime behaviour.
@@ -25,6 +25,7 @@ until the model marks it complete.
 | Command | Action |
 |---------|--------|
 | `/goal <objective>` | Create a new goal and start pursuing it. Fails if an unfinished goal exists. |
+| `/goal --tokens <N> <objective>` | Create a goal with an explicit uncached-input-plus-output token budget. |
 | `/goal show` (alias: `/goal status`) | Print the current goal, status, token usage, and elapsed time. |
 | `/goal clear` | Remove the goal and stop the manager loop. |
 | `/goal pause` | Pause auto-continuation (user must `/goal resume` to reactivate). |
@@ -85,8 +86,9 @@ but do not propagate.
   snapshot) and `goal-removed` (sentinel meaning the most recent
   goal-state entry was cleared). On `session_start`, the latest of each
   determines the restored goal.
-- **Accounting** charges tokens on every `message_end` for assistant
-  messages; `pi --no-session -p` print mode never fires `message_end`
+- **Accounting** charges each assistant response's uncached input plus output
+  tokens on `message_end`; Pi reports these as per-response values rather than
+  cumulative session totals. `pi --no-session -p` print mode never fires `message_end`
   for assistant messages (no agent loop runs), so budget checks are a
   no-op there.
 - **Context pruning** keeps only the most recent 2 steering messages
@@ -123,4 +125,4 @@ The full suite (utils + workflow-mode + tools-check) passes; the
 | `root_accounting_state` / `descendant_token_usage` | Codex parent-child token tracking requires in-process sub-threads; pi's `subagent` extension uses separate processes. |
 | `update_plan` tool integration | pi has no `update_plan` tool; the continuation prompt's `if update_plan is available` clause is omitted. |
 | Fork-flush protocol | pi's `/fork` copies the JSONL up to the fork point; goal state carries forward naturally. To drop the goal at fork time, the user can `/goal clear`. |
-| `MAX_GOAL_TOKEN_BUDGET` config cap | Codex's per-org cap has no pi equivalent; users set their own per-goal budget (currently the slash command does not expose this; the LLM tool does). |
+| `MAX_GOAL_TOKEN_BUDGET` config cap | Codex's per-org cap has no pi equivalent; users set their own per-goal budget. |

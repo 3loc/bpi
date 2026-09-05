@@ -26,6 +26,7 @@ import {
 	isTerminal,
 	isWrappingUp,
 	newGoalId,
+	parseGoalCreation,
 	validateObjective,
 	validateTokenBudget,
 } from "./utils.ts";
@@ -49,6 +50,35 @@ describe("validateObjective", () => {
 
 	test("treats whitespace-only strings after trim as empty", () => {
 		assert.equal(validateObjective("\n\t  \n"), "objective must not be empty");
+	});
+});
+
+describe("parseGoalCreation", () => {
+	test("parses a plain objective without a budget", () => {
+		assert.deepEqual(parseGoalCreation("ship the release"), {
+			ok: true,
+			objective: "ship the release",
+			tokenBudget: null,
+		});
+	});
+
+	test("parses space and equals forms of --tokens", () => {
+		assert.deepEqual(parseGoalCreation("--tokens 50000 ship the release"), {
+			ok: true,
+			objective: "ship the release",
+			tokenBudget: 50000,
+		});
+		assert.deepEqual(parseGoalCreation("--tokens=7500 investigate the bug"), {
+			ok: true,
+			objective: "investigate the bug",
+			tokenBudget: 7500,
+		});
+	});
+
+	test("rejects missing and invalid budgets", () => {
+		assert.equal(parseGoalCreation("--tokens").ok, false);
+		assert.equal(parseGoalCreation("--tokens nope ship it").ok, false);
+		assert.equal(parseGoalCreation("--tokens 0 ship it").ok, false);
 	});
 });
 
@@ -188,15 +218,15 @@ describe("status predicates", () => {
 });
 
 describe("billableTokens", () => {
-	test("subtracts cached input tokens from input", () => {
-		assert.equal(billableTokens({ input: 1000, output: 200, cacheRead: 400 }), 800);
+	test("counts Pi's already-uncached input plus output", () => {
+		assert.equal(billableTokens({ input: 1000, output: 200, cacheRead: 400 }), 1200);
 	});
 
 	test("ignores negative output (defensive against provider quirks)", () => {
 		assert.equal(billableTokens({ input: 100, output: -50, cacheRead: 0 }), 100);
 	});
 
-	test("ignores negative cacheRead (defensive)", () => {
+	test("does not use cacheRead in the uncached token budget", () => {
 		assert.equal(billableTokens({ input: 100, output: 50, cacheRead: -200 }), 150);
 	});
 

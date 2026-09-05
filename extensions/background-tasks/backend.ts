@@ -25,6 +25,8 @@
 
 import type { StatusSnapshot } from "./state.ts";
 
+export type JobScope = "user" | "system";
+
 /** What the caller asked for. Substrate-agnostic on purpose: this is
  *  what the agent cares about. The backend translates scope / output
  *  file format / etc. into its own vocabulary. */
@@ -37,7 +39,7 @@ export interface LaunchRequest {
 	outputFile?: string;
 	/** "user" by default; "system" requires the matching privilege on
 	 *  every substrate that supports it. */
-	scope?: "user" | "system";
+	scope?: JobScope;
 }
 
 export interface LaunchResult {
@@ -86,15 +88,15 @@ export interface Backend {
 	launch(req: LaunchRequest): Promise<LaunchResult>;
 	/** Returns undefined when the substrate no longer knows the job
 	 *  (e.g. systemd garbage-collected the unit). */
-	status(id: string): Promise<StatusSnapshot | undefined>;
+	status(id: string, scope?: JobScope): Promise<StatusSnapshot | undefined>;
 	/** Resolves when status reports `state` (or when the timeout
 	 *  fires). Returns the final status, or undefined on timeout. */
-	wait(id: string, state: import("./state.ts").JobState, timeoutMs: number): Promise<StatusSnapshot | undefined>;
+	wait(id: string, state: import("./state.ts").JobState, timeoutMs: number, scope?: JobScope): Promise<StatusSnapshot | undefined>;
 	/** Stop the job. After cancel(), status() should eventually
 	 *  report state="cancelled". MUST NOT throw if the job is
 	 *  already terminal. */
-	cancel(id: string, signal?: "SIGTERM" | "SIGKILL"): Promise<void>;
+	cancel(id: string, signal?: "SIGTERM" | "SIGKILL", scope?: JobScope): Promise<void>;
 	/** Bounded journal/log fetch. Throws if the window exceeds
 	 *  maxChars (refuses to truncate silently). */
-	journal(id: string, opts: JournalOptions): Promise<JournalChunk>;
+	journal(id: string, opts: JournalOptions, scope?: JobScope): Promise<JournalChunk>;
 }

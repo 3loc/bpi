@@ -4,15 +4,13 @@
  * Ports codex-rs/ext/goal/src/accounting.rs to a TypeScript model suited
  * to pi's single-process model. Two facts matter for the goal budget:
  *
- *   tokens   — billable tokens in cumulative assistant Usage, computed as
- *              `input - cacheRead + output` (cacheRead represents tokens
- *              paid upstream and are not charged again here)
- *   time     — wall-clock seconds since the goal was created
+ *   tokens   — uncached input + output tokens in each assistant response
+ *   time     — active wall-clock seconds between accounting passes
  *
- * Both are stored as deltas: we keep a baseline and only advance it,
- * never rewind. This means the total tokens/time used by the goal is the
- * sum of advances, not "now minus start" — a session that's been resumed
- * many times still sums to the true lifetime usage.
+ * Pi reports Usage per assistant response, not cumulatively for the session.
+ * Each response is therefore charged in full. Time uses a moving anchor that
+ * is reset whenever accounting starts or resumes, so time spent offline or
+ * paused is never charged to the goal.
  *
  * Concurrency: pi is single-process, but `tool_result` and `message_end`
  * can fire from the same turn out of order. A simple async mutex protects
@@ -24,9 +22,7 @@
  */
 
 import { billableTokens } from "./utils.ts";
-import type { GoalStateSnapshot } from "./persistence.ts";
-
-/** Cumulative Usage fields we care about for token accounting. */
+/** Per-response Usage fields we care about for token accounting. */
 export interface UsageDelta {
 	input: number;
 	output: number;
@@ -57,7 +53,6 @@ export interface GoalProgressSnapshot {
  * we saw, which is the same behaviour codex has (it loads from SQLite).
  */
 export class GoalAccounting {
-	private baseline: UsageDelta | null = null;
 	private lastAccountedAtMs: number | null = null;
 	/** Wall-clock elapsed seconds; only advances, never rewinds. */
 	private elapsedSeconds = 0;
@@ -87,14 +82,13 @@ export class GoalAccounting {
 		}
 	}
 
-	/** Called on goal creation / resume — seeds baselines. */
-	start(goal: { statusActive: boolean; tokensUsed: number; timeUsedSeconds: number; lastAccountedUsage: UsageDelta | null; lastAccountedAtMs: number | null }): void {
+	/** Called on goal creation / session restore. */
+	start(goal: { statusActive: boolean; tokensUsed: number; timeUsedSeconds: number; nowMs: number }): void {
 		this.hasGoal = true;
 		this.statusActive = goal.statusActive;
 		this.tokensUsed = goal.tokensUsed;
 		this.elapsedSeconds = goal.timeUsedSeconds;
-		this.baseline = goal.lastAccountedUsage;
-		this.lastAccountedAtMs = goal.lastAccountedAtMs;
+		this.lastAccountedAtMs = goal.statusActive ? goal.nowMs : null;
 		this.consecutiveExecutionFailures = 0;
 	}
 
@@ -102,12 +96,12 @@ export class GoalAccounting {
 	stop(): void {
 		this.hasGoal = false;
 		this.statusActive = false;
-		this.baseline = null;
 		this.lastAccountedAtMs = null;
 	}
 
-	setStatusActive(active: boolean): void {
+	setStatusActive(active: boolean, nowMs = Date.now()): void {
 		this.statusActive = active;
+		this.lastAccountedAtMs = active ? nowMs : null;
 	}
 
 	/**
@@ -120,12 +114,7 @@ export class GoalAccounting {
 	snapshot(currentUsage: UsageDelta, nowMs: number): GoalProgressSnapshot | null {
 		if (!this.hasGoal || !this.statusActive) return null;
 
-		let tokenDelta = 0;
-		if (this.baseline !== null) {
-			const currentBillable = billableTokens(currentUsage);
-			const baselineBillable = billableTokens(this.baseline);
-			tokenDelta = Math.max(0, currentBillable - baselineBillable);
-		}
+		const tokenDelta = billableTokens(currentUsage);
 
 		let timeDeltaSeconds = 0;
 		if (this.lastAccountedAtMs !== null) {
@@ -139,19 +128,12 @@ export class GoalAccounting {
 	}
 
 	/**
-	 * Apply a delta to the running totals and advance the baseline.
+	 * Apply a response's delta to the running totals and advance the time anchor.
 	 * Caller must `lock()` around `snapshot()` + `commit()`.
 	 */
-	commit(snapshot: GoalProgressSnapshot, currentUsage: UsageDelta, nowMs: number): void {
+	commit(snapshot: GoalProgressSnapshot, nowMs: number): void {
 		this.tokensUsed += snapshot.tokenDelta;
 		this.elapsedSeconds += snapshot.timeDeltaSeconds;
-		this.baseline = currentUsage;
-		this.lastAccountedAtMs = nowMs;
-	}
-
-	/** Reset baseline to the latest assistant usage without charging any delta. */
-	seedBaseline(currentUsage: UsageDelta, nowMs: number): void {
-		this.baseline = currentUsage;
 		this.lastAccountedAtMs = nowMs;
 	}
 
@@ -175,15 +157,6 @@ export class GoalAccounting {
 	 */
 	shouldBlockFromExecutionFailures(): boolean {
 		return this.consecutiveExecutionFailures >= 3;
-	}
-
-	/** Snapshot for persistence — caller owns the returned object. */
-	toSnapshot(): GoalStateSnapshot["lastAccountedUsage"] {
-		return this.baseline;
-	}
-
-	getLastAccountedAtMs(): number | null {
-		return this.lastAccountedAtMs;
 	}
 
 	getTokensUsed(): number {

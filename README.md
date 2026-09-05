@@ -22,7 +22,7 @@ status.
 | [`extensions/sessions`](extensions/sessions/index.ts)                         | `/sessions [all\|switch]`, `pi --sessions` — survey saved sessions with activity status (current / active / recent / inactive), message counts, and previews; `switch` opens a picker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | [`extensions/local-context`](extensions/local-context/index.ts)               | Guarantees a local-directory snapshot (listing, README head, package.json, git state) enters the system prompt before each user command — but **only when no project `AGENTS.md`/`CLAUDE.md` exists in cwd or git root** (native context loading wins)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | [`extensions/edit-in-editor`](extensions/edit-in-editor/index.ts)             | `open_in_editor` tool — opens a buffer in `${EDITOR:-vi}` with full TTY access (the agent's `bash` tool runs without a TTY, so this is the only path that hands the terminal back). Two sources: `path` (existing file) or `context: "lastAssistant"` (materializes the most recent assistant text into a temp buffer itself, so it isn't re-sent via a write call). Suspends the TUI around the editor session; returns a unified diff of the user's changes via `diff(1)` by default (`full: true` opts into the whole saved contents). Used by the `code-review` skill to materialize the review report as the editor buffer                                                                                                                                                                                                                                                    |
-| [`extensions/goal`](extensions/goal/README.md)                               | `/goal <objective>`, `/goal show|clear|pause|resume`, `pi --goal` — a strict port of OpenAI Codex's `/goal` slash command. Three LLM-callable tools (`goal_get`/`goal_set`/`goal_update`), six-status enum (`active`/`paused`/`blocked`/`usage_limited`/`budget_limited`/`complete`), per-turn token+time budget accounting, settle-driven manager tick that re-injects a continuation prompt on every `agent_settled`. State lives in a JSONL session entry, so `/resume` and `--fork` carry the goal forward naturally. Sub-agent budgets are deliberately not ported (pi's `subagent` extension spawns a separate process; parent's token usage is not visible to the goal)                                                                                                                                                                                                                                                    |
+| [`extensions/goal`](extensions/goal/README.md)                               | `/goal [--tokens N] <objective>`, `/goal show|clear|pause|resume`, `pi --goal` — a strict port of OpenAI Codex's `/goal` slash command. Three LLM-callable tools (`goal_get`/`goal_set`/`goal_update`), six-status enum (`active`/`paused`/`blocked`/`usage_limited`/`budget_limited`/`complete`), per-response token+time budget accounting, settle-driven manager tick that re-injects a continuation prompt on every `agent_settled`. State lives in a JSONL session entry, so `/resume` and `--fork` carry the goal forward naturally. Sub-agent budgets are deliberately not ported (pi's `subagent` extension spawns a separate process; parent's token usage is not visible to the goal)                                                                                                                                                                                                                                                    |
 | [`extensions/context-usage-report`](extensions/context-usage-report/index.ts) | `/context-report [breakdown\|total\|system]`, `pi --context-report` — at startup shows a one-line context size + % of window header; the command (and `--context-report` flag) show a per-category breakdown table (system, project context, skills, conversation by role) with clear attribution: a Provider column (the measured total, once reported) beside a Heuristic column of raw per-category estimates (prose ≈ 4 chars/token, code/JSON ≈ 3.5, CJK ≈ 1.9 — tuned against the real GLM-4.6 tokenizer)                                                                                                                                                                                                                                                                                                                                                                    |
 | [`extensions/minimax-m3-clean`](extensions/minimax-m3-clean/index.ts)         | `pi --m3-clean` — routes `minimax / MiniMax-M3` to MiniMax's OpenAI-compatible endpoint (`api.minimax.io/v1`) for passive prompt caching and cleans the stream in flight: inline `<think>…</think>` becomes a proper thinking block (never visible text), duplicated reasoning-field thinking collapses into one block. M2.7 models stay on the Anthropic-compatible endpoint; the stored `minimax` credential keeps working                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | [`extensions/background-tasks`](extensions/background-tasks/index.ts)         | `background_run`, `background_status`, `background_wait`, `background_cancel`, `background_journal` tools + `/jobs [list\|all\|wait\|cancel]` + `pi --background-tasks` — launch long-running commands as background tasks and report completion / timeout back into the running pi session via `pi.sendMessage` so a long job doesn't block the bash tool. Current backend: transient systemd units under the user manager; abstraction (`Backend` interface in `backend.ts`) is substrate-agnostic. Background watcher polls every 2 s and fires a `background-tasks-result` custom message on the next turn when a job reaches a terminal state. Default listing shows active + recently-completed jobs only (`/jobs all` for the full table). `npm test` runs the unit + integration suite against an in-process backend (incl. per-tool parameter-schema regression coverage) |
@@ -43,7 +43,29 @@ status.
 | [`skills/yaml-quality`](skills/yaml-quality/SKILL.md)                   | Design and review gate for repo-bound YAML (complements `yaml-lint-repo`): avoid implicit-type footguns (Norway/sexagesimal/octal), unquoted colons, comments that don't survive the formatter, fragile quoting strategy. References cover pitfalls, quoting rules, style, and sub-format conventions. Auto-loads when writing/reviewing repo YAML                                                                                                                                                                                                                                                                                                                                                                             |
 | [`skills/background-tasks`](skills/background-tasks/SKILL.md)           | When and how to launch long-running commands as background tasks: lifecycle (starting → running → completed/failed/timeout/cancelled), the five `background_*` tool parameters, how to read the completion notification, common errors (bus unreachable, `ExecMainStatus=203`, `Result=resources`), and what falls outside the abstraction's scope. A separate [`reference.md`](skills/background-tasks/reference.md) covers the raw `systemd-run` flags the tool doesn't wrap (scheduling, scopes, env vars, resource limits, restart policies). Loads when the agent needs to launch a long-running command and react to its completion without holding bash hostage. Requires the `background-tasks` extension to be loaded |
 
-## Install
+## Install bpi
+
+This is a Pi package, not a separate fork of the Pi executable. Install Pi once,
+then install **bpi** from the public GitHub repository:
+
+```bash
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+pi install git:github.com/3loc/bpi
+```
+
+If Pi is already installed, only the second command is needed. Start `pi` as
+normal; bpi's extensions and skills load automatically in every project. Check
+the installation with:
+
+```bash
+pi list
+pi --help | grep -- --goal
+```
+
+Update bpi later with `pi update --extensions`. To try it for one run without
+installing it, use `pi -e git:github.com/3loc/bpi`.
+
+### Development checkout
 
 ```bash
 ./install.sh
@@ -58,6 +80,9 @@ Manual equivalent:
 ```bash
 pi install /path/to/bpi
 ```
+
+To make this checkout install the public GitHub copy instead, run
+`./install.sh --remote`.
 
 pi registers the repo **by reference, without copying**: this repository is
 the single source of truth. Edits here are picked up by `/reload` or the
@@ -119,6 +144,9 @@ Rules that keep this true:
 ```bash
 ./uninstall.sh
 ```
+
+For a GitHub installation, use `pi remove git:github.com/3loc/bpi` or
+`./uninstall.sh --remote` from a checkout.
 
 ## Adding a new extension
 

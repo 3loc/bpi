@@ -67,6 +67,32 @@ export function validateTokenBudget(value: number | null | undefined): string | 
 	return null;
 }
 
+export type ParsedGoalCreation =
+	| { ok: true; objective: string; tokenBudget: number | null }
+	| { ok: false; error: string };
+
+/** Parse `/goal [--tokens N] <objective>` without treating objective text as shell syntax. */
+export function parseGoalCreation(input: string): ParsedGoalCreation {
+	const trimmed = input.trim();
+	let objective = trimmed;
+	let tokenBudget: number | null = null;
+
+	if (trimmed.startsWith("--tokens")) {
+		const match = trimmed.match(/^--tokens(?:=|\s+)(\S+)\s+([\s\S]+)$/);
+		if (!match) {
+			return { ok: false, error: "usage: /goal --tokens <positive-integer> <objective>" };
+		}
+		tokenBudget = Number(match[1]);
+		const budgetError = validateTokenBudget(tokenBudget);
+		if (budgetError !== null) return { ok: false, error: budgetError };
+		objective = match[2]!.trim();
+	}
+
+	const objectiveError = validateObjective(objective);
+	if (objectiveError !== null) return { ok: false, error: objectiveError };
+	return { ok: true, objective, tokenBudget };
+}
+
 /** Random, URL-safe goal id — distinct from codex's UUID for human readability in JSONL. */
 export function newGoalId(): string {
 	const rand = Math.random().toString(36).slice(2, 10);
@@ -147,18 +173,17 @@ export function isTerminal(status: GoalStatus): boolean {
 }
 
 /**
- * Compute the number of billable tokens in a usage record, matching the
- * shape codex uses for budget accounting: `input - cacheRead + output`,
- * where cacheRead represents tokens that came from cache (already paid for
- * upstream) and output is included only when non-negative (defensive
- * against provider quirks that briefly report negative output mid-stream).
+ * Compute uncached billable tokens from one Pi assistant response. Pi already
+ * reports uncached input and cache reads as separate fields, so subtracting
+ * cacheRead from input would double-discount cached tokens. Cache reads and
+ * writes are intentionally excluded, matching Codex's uncached-input budget.
  */
 export function billableTokens(usage: {
 	input: number;
 	output: number;
 	cacheRead: number;
 }): number {
-	const input = Math.max(0, usage.input - Math.max(0, usage.cacheRead));
+	const input = Math.max(0, usage.input);
 	const output = Math.max(0, usage.output);
 	return input + output;
 }

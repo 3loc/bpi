@@ -103,6 +103,17 @@ describe("SystemdBackend.launch", () => {
 });
 
 describe("SystemdBackend.status", () => {
+	it("queries the system manager for system-scoped jobs", async () => {
+		let captured: string[] = [];
+		const exec: ExecFn = async (_cmd, args) => {
+			captured = args;
+			return { code: 0, stdout: "ActiveState=active\n", stderr: "" };
+		};
+		const b = new SystemdBackend(exec, ctx);
+		await b.status("run-system.service", "system");
+		assert.equal(captured[0], "--system");
+	});
+
 	it("returns undefined when systemctl show fails (e.g. unit garbage-collected)", async () => {
 		const exec = fakeExec([{ code: 1, stderr: "Unit not found" }]);
 		const b = new SystemdBackend(exec, ctx);
@@ -171,6 +182,18 @@ describe("SystemdBackend.wait", () => {
 		assert.equal(snap?.exitStatus, 3);
 	});
 
+	it("polls and reconciles in system scope", async () => {
+		const captured: string[][] = [];
+		const exec: ExecFn = async (_cmd, args) => {
+			captured.push(args);
+			return { code: 0, stdout: "ActiveState=inactive\nResult=success\nExecMainStatus=0\n", stderr: "" };
+		};
+		const b = new SystemdBackend(exec, ctx);
+		await b.wait("run-system.service", "completed", 5_000, "system");
+		assert.match(captured[0]![3]!, /systemctl --system show/);
+		assert.equal(captured[1]![0], "--system");
+	});
+
 	it("refuses unit ids outside the unit-name alphabet (shell-embedding defense)", async () => {
 		let calls = 0;
 		const exec: ExecFn = async () => {
@@ -204,6 +227,17 @@ describe("SystemdBackend.cancel", () => {
 		const b = new SystemdBackend(exec, ctx);
 		await b.cancel("run-x.service", "SIGKILL");
 		assert.deepEqual(captured, ["--user", "kill", "-s", "SIGKILL", "run-x.service"]);
+	});
+
+	it("stops system-scoped jobs through the system manager", async () => {
+		let captured: string[] = [];
+		const exec: ExecFn = async (_cmd, args) => {
+			captured = args;
+			return { code: 0, stdout: "", stderr: "" };
+		};
+		const b = new SystemdBackend(exec, ctx);
+		await b.cancel("run-system.service", "SIGTERM", "system");
+		assert.deepEqual(captured, ["--system", "stop", "run-system.service"]);
 	});
 });
 

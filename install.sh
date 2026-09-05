@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
-# Install this repo as a pi package at USER scope (global, all projects).
+# Install bpi as a pi package at USER scope (global, all projects).
 #
-# pi registers the repo path in ~/.pi/agent/settings.json without copying:
-# this repository stays the single source of truth. Edits here take effect
-# after /reload or the next pi start. NOT project-local by design.
+# By default this registers the current checkout by reference for development.
+# Pass --remote to install the public GitHub package into pi's managed git
+# package directory instead. NOT project-local by design.
 #
 # Requires: pi (https://pi.dev)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REMOTE_SOURCE="git:github.com/3loc/bpi"
+
+case "${1:---local}" in
+	--local) SOURCE="$REPO_ROOT" ;;
+	--remote) SOURCE="$REMOTE_SOURCE" ;;
+	-h|--help)
+		echo "Usage: $0 [--local|--remote]"
+		echo "  --local   register this checkout by reference (default)"
+		echo "  --remote  install the public GitHub package"
+		exit 0
+		;;
+	*)
+		echo "error: unknown option: $1" >&2
+		echo "Usage: $0 [--local|--remote]" >&2
+		exit 2
+		;;
+esac
 
 command -v pi >/dev/null 2>&1 || {
 	echo "error: pi not found on PATH" >&2
@@ -21,10 +38,10 @@ if ! command -v ddgs >/dev/null 2>&1; then
 	echo "         install with: pip install ddgs (or pipx/uv tool install ddgs)"
 fi
 
-pi install "$REPO_ROOT"
+pi install "$SOURCE"
 
 echo
-echo "Installed: $REPO_ROOT"
+echo "Installed: $SOURCE"
 echo "Resources (details: README.md):"
 shopt -s nullglob
 for ext in "$REPO_ROOT"/extensions/*/index.ts; do
@@ -45,4 +62,8 @@ for skill_md in "$REPO_ROOT"/skills/*/SKILL.md; do
 	echo "  skills/$name -> $desc"
 done
 echo "Run 'pi list' to verify, or /reload inside a running session."
-echo "Confirm startup loading on this machine: ./verify.sh"
+if [[ $SOURCE == "$REPO_ROOT" ]]; then
+	echo "Confirm startup loading on this machine: ./verify.sh"
+else
+	echo "Update later with: pi update --extensions"
+fi

@@ -20,9 +20,8 @@
  * Together they let a /resume'd session reconstruct: "the goal was X, then
  * the user cleared it" → no active goal on resume.
  *
- * The accounting state (tokens used, time used, last-accounted baseline)
- * is part of the same goal-state entry — it survives /resume natively,
- * which mirrors Codex's SQLite-backed goal state surviving the same way.
+ * The accounting totals are part of the same goal-state entry and survive
+ * /resume natively, mirroring Codex's SQLite-backed goal state.
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -33,27 +32,9 @@ export const GOAL_REMOVED_ENTRY_TYPE = "goal-removed";
 
 /**
  * Snapshot shape — JSON-serializable, mirrors codex's ThreadGoal row.
- * `lastAccountedUsage` is the cumulative assistant Usage at which we last
- * charged tokens to this goal; on resume we continue the delta from there.
  */
 export interface GoalStateSnapshot {
 	goal: Goal;
-	/**
-	 * Cumulative Usage at the time we last accounted tokens. Resuming a
-	 * session means resuming the delta from this baseline; we never re-
-	 * charge tokens that already belong to the goal before the resume.
-	 * `null` means "no baseline yet" — the first post-resume accounting
-	 * pass will seed it from the latest known assistant message.
-	 */
-	lastAccountedUsage: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-		totalTokens: number;
-	} | null;
-	/** Wall-clock ms timestamp of the last accounting pass; null = no baseline yet. */
-	lastAccountedAtMs: number | null;
 	/**
 	 * Consecutive turn counter for the "execution failure" blocked trigger
 	 * (port of codex's consecutive_execution_failure_turns). Resets to 0
@@ -97,36 +78,4 @@ export function loadGoalState(ctx: ExtensionContext): {
 	}
 
 	return { state: snapshot, removed };
-}
-
-/**
- * Read every accounting-relevant data point we need to resume cleanly:
- * the latest assistant message's cumulative Usage (for token delta base),
- * the wall-clock anchor (for time delta base), and the prior consecutive-
- * failure counter.
- */
-export function loadResumeAnchor(ctx: ExtensionContext): {
-	latestAssistantUsage: GoalStateSnapshot["lastAccountedUsage"];
-	latestAssistantAtMs: number | null;
-} {
-	let latestAssistantUsage: GoalStateSnapshot["lastAccountedUsage"] = null;
-	let latestAssistantAtMs: number | null = null;
-
-	for (const entry of ctx.sessionManager.getBranch()) {
-		if (entry.type !== "message") continue;
-		const message = entry.message;
-		if (message.role !== "assistant") continue;
-		// message.usage is the cumulative Usage for the entire assistant
-		// response, including all tool rounds in that turn.
-		latestAssistantUsage = {
-			input: message.usage.input,
-			output: message.usage.output,
-			cacheRead: message.usage.cacheRead,
-			cacheWrite: message.usage.cacheWrite,
-			totalTokens: message.usage.totalTokens,
-		};
-		latestAssistantAtMs = message.timestamp;
-	}
-
-	return { latestAssistantUsage, latestAssistantAtMs };
 }

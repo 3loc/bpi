@@ -46,14 +46,14 @@ export async function tick(jobs: Map<string, Job>, backend: Backend, now: number
 			job.state = "timeout";
 			job.finishedAt = now;
 			// Best-effort stop; don't block the tick on it.
-			void backend.cancel(job.id).catch(() => {
+			void backend.cancel(job.id, "SIGTERM", job.scope).catch(() => {
 				/* ignore — the job will appear terminal in status() on the next tick anyway */
 			});
 			finished.push(job);
 			continue;
 		}
 
-		const snap = await backend.status(job.id).catch(() => undefined);
+		const snap = await backend.status(job.id, job.scope).catch(() => undefined);
 		if (!snap) continue; // transient — try again next tick
 
 		if (!isTerminal(snap.state)) {

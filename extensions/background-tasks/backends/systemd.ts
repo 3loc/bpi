@@ -15,7 +15,7 @@
  */
 
 import { extractUnitName, isTerminal, parseShowOutput, type JobState, type StatusSnapshot } from "../state.ts";
-import type { Backend, BackendCapabilities, JournalChunk, JournalOptions, LaunchRequest, LaunchResult } from "../backend.ts";
+import type { Backend, BackendCapabilities, JournalChunk, JournalOptions, JobScope, LaunchRequest, LaunchResult } from "../backend.ts";
 
 /** Minimal subprocess contract — pi.exec in production, a recorder in
  *  tests. Mirrors the bits of pi.exec we actually use. */
@@ -81,10 +81,10 @@ export class SystemdBackend implements Backend {
 		return { id: unit, raw: result };
 	}
 
-	async status(id: string): Promise<StatusSnapshot | undefined> {
+	async status(id: string, scope: JobScope = "user"): Promise<StatusSnapshot | undefined> {
 		const result = await this.exec(
 			"systemctl",
-			this.argsFor("show", id, "--property=ActiveState,SubState,ExecMainStatus,Result,ActiveEnterTimestampMonotonic,InactiveExitTimestampMonotonic"),
+			this.argsFor(scope, "show", id, "--property=ActiveState,SubState,ExecMainStatus,Result,ActiveEnterTimestampMonotonic,InactiveExitTimestampMonotonic"),
 			{ timeout: 5_000 },
 		);
 		if (result.code !== 0) return undefined;
@@ -103,12 +103,13 @@ export class SystemdBackend implements Backend {
 	 *  running". The poll runs inside one `timeout`-wrapped exec to
 	 *  honor the ExecFn contract (one process that exits on its own);
 	 *  the exec-level timeout is a backstop, not the primary bound. */
-	async wait(id: string, state: JobState, timeoutMs: number): Promise<StatusSnapshot | undefined> {
+	async wait(id: string, state: JobState, timeoutMs: number, scope: JobScope = "user"): Promise<StatusSnapshot | undefined> {
 		assertShellSafeUnitId(id);
 		const accept = mapStateToActiveState(state) === "inactive" ? "inactive|failed" : "active";
+		const scopeFlag = scope === "system" ? "--system" : "--user";
 		const poll =
 			`while :; do ` +
-			`s=$(systemctl --user show '${id}' --property=ActiveState --value 2>/dev/null) || exit 1; ` +
+			`s=$(systemctl ${scopeFlag} show '${id}' --property=ActiveState --value 2>/dev/null) || exit 1; ` +
 			`case "$s" in ${accept}) exit 0;; esac; ` +
 			`sleep 0.25; ` +
 			`done`;
@@ -117,20 +118,20 @@ export class SystemdBackend implements Backend {
 		}).catch(() => undefined);
 		// The snapshot decides, not the poll's exit code — it is ground
 		// truth whether the poll hit, timed out, or failed outright.
-		const snap = await this.status(id).catch(() => undefined);
+		const snap = await this.status(id, scope).catch(() => undefined);
 		return snap && waitSatisfied(snap.state, state) ? snap : undefined;
 	}
 
-	async cancel(id: string, signal: "SIGTERM" | "SIGKILL" = "SIGTERM"): Promise<void> {
-		const args = signal === "SIGKILL" ? this.argsFor("kill", "-s", "SIGKILL", id) : this.argsFor("stop", id);
+	async cancel(id: string, signal: "SIGTERM" | "SIGKILL" = "SIGTERM", scope: JobScope = "user"): Promise<void> {
+		const args = signal === "SIGKILL" ? this.argsFor(scope, "kill", "-s", "SIGKILL", id) : this.argsFor(scope, "stop", id);
 		const result = await this.exec("systemctl", args, { timeout: 30_000 });
 		if (result.code !== 0) {
 			throw new Error(`Cancel failed for ${id} (exit=${result.code}): ${result.stderr}`);
 		}
 	}
 
-	async journal(id: string, opts: JournalOptions): Promise<JournalChunk> {
-		const args = this.argsFor("-u", id, "-n", String(opts.limit), "--no-pager", "-o", "cat");
+	async journal(id: string, opts: JournalOptions, scope: JobScope = "user"): Promise<JournalChunk> {
+		const args = this.argsFor(scope, "-u", id, "-n", String(opts.limit), "--no-pager", "-o", "cat");
 		if (opts.since) args.push("--since", opts.since);
 		if (opts.until) args.push("--until", opts.until);
 
@@ -146,13 +147,8 @@ export class SystemdBackend implements Backend {
 		return { lines: result.stdout.split("\n"), totalChars: result.stdout.length };
 	}
 
-	private argsFor(...args: string[]): string[] {
-		// Caller passes the action; we prepend --user unless told otherwise.
-		// launch() handles the scope itself; this helper exists for
-		// status/wait/cancel/journal which assume the same scope as
-		// the launch. If a future caller needs cross-scope calls, it
-		// should construct its own args array.
-		return ["--user", ...args];
+	private argsFor(scope: JobScope, ...args: string[]): string[] {
+		return [scope === "system" ? "--system" : "--user", ...args];
 	}
 }
 

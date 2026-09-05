@@ -149,7 +149,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		// Preview the journal tail for the notification.
 		let preview = "";
 		try {
-			const chunk = await backend.journal(job.id, { limit: 200, maxChars: RESULT_PREVIEW_CHARS });
+			const chunk = await backend.journal(job.id, { limit: 200, maxChars: RESULT_PREVIEW_CHARS }, job.scope);
 			preview = chunk.lines.join("\n").slice(-RESULT_PREVIEW_CHARS);
 		} catch {
 			preview = "";
@@ -359,7 +359,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 			}
 			if (sub === "wait") {
 				if (!backend) return;
-				const result = await backend.wait(job.id, "completed", 30_000);
+				const result = await backend.wait(job.id, "completed", 30_000, job.scope);
 				const text = result ? `${job.label} (${job.id}) reached terminal: ${job.state}` : `Wait timed out for ${job.id}.`;
 				if (ctx.mode === "print") console.log(text);
 				else ctx.ui.notify(text, result ? "info" : "warning");
@@ -367,7 +367,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 			}
 			if (sub === "cancel") {
 				if (!backend) return;
-				await backend.cancel(job.id, "SIGTERM");
+				await backend.cancel(job.id, "SIGTERM", job.scope);
 				job.state = "cancelled";
 				job.finishedAt = Date.now();
 				const text = `Cancelled ${job.label} (${job.id}).`;
@@ -389,7 +389,7 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 		// Refresh each non-terminal job against the live backend.
 		for (const job of [...jobs.values()]) {
 			if (isTerminal(job.state)) continue;
-			const snap = await backend.status(job.id).catch(() => undefined);
+			const snap = await backend.status(job.id, job.scope).catch(() => undefined);
 			if (!snap) continue;
 			if (!isTerminal(snap.state)) {
 				job.state = snap.state;

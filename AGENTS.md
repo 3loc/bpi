@@ -4,7 +4,7 @@ This repository (`bpi`) is a **pi package**: it is the single source of
 truth for this machine's pi extensions and skills. It is registered in
 `~/.pi/agent/settings.json` under `packages` and loaded by reference.
 
-How the registration works: `pi install` (run by `./install.sh`) stores
+How development registration works: `pi install` (run by `./install.sh`) stores
 the repo as a path **relative to the settings file's directory**
 (`~/.pi/agent/`), e.g. `"../../src/bpi"` — pi resolves it to the
 absolute repo path at every startup. Nothing is copied; the settings
@@ -25,7 +25,8 @@ entry is a live link to wherever the repo sits on disk. Consequences:
    `extensions/<name>/index.ts` and `skills/<name>/SKILL.md`.
 2. **This repo is loaded at startup — once installed.** The rule
    holds only while the repo is registered in `~/.pi/agent/settings.json`
-   (done by `./install.sh`). If not installed (e.g. a fresh clone on a
+   (done by `./install.sh` for a development checkout, or by the public
+   `pi install git:github.com/3loc/bpi` command). If not installed (e.g. a fresh clone on a
    new machine), pi loads nothing from here: run `./install.sh` and
    `./verify.sh` first — do not work around it by copying files to
    global locations. When registered, skills here are already in the

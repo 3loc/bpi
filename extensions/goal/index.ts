@@ -10,7 +10,7 @@
  *      steering prompt whenever the goal is `active` and the previous
  *      turn settled, mirroring Codex's `on_thread_idle → continue_if_idle`
  *   3. Token & time budget accounting: the goal has a token budget and
- *      per-turn deltas are charged on each `message_end` for assistant
+ *      per-response usage is charged on each `message_end` for assistant
  *      messages; budget exhaustion flips status to `budget_limited` and
  *      the manager switches to a wrap-up steering prompt
  *   4. Six-state enum (active / paused / blocked / usage_limited /
@@ -37,7 +37,7 @@
  *
  * Commands:
  *
- *   /goal <objective>          create a goal and start pursuing it
+ *   /goal [--tokens N] <objective>  create a goal and start pursuing it
  *   /goal [show|status]        print the current goal
  *   /goal clear                remove the goal (no auto-continuation)
  *   /goal pause                pause auto-continuation
@@ -61,7 +61,6 @@ import {
 	GOAL_REMOVED_ENTRY_TYPE,
 	GOAL_STATE_ENTRY_TYPE,
 	loadGoalState,
-	loadResumeAnchor,
 	type GoalStateSnapshot,
 } from "./persistence.ts";
 import {
@@ -81,13 +80,12 @@ import {
 	executeGoalUpdate,
 } from "./tools.ts";
 import {
-	billableTokens,
 	canTransition,
 	isAutoContinuing,
 	isWrappingUp,
 	newGoalId,
+	parseGoalCreation,
 	validateObjective,
-	validateTokenBudget,
 	type Goal,
 	type GoalStatus,
 } from "./utils.ts";
@@ -217,8 +215,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			statusActive: true,
 			tokensUsed: 0,
 			timeUsedSeconds: 0,
-			lastAccountedUsage: null,
-			lastAccountedAtMs: null,
+			nowMs: now,
 		});
 		persist(goal);
 		// The flag at the bottom of the slash command handler in codex
@@ -290,8 +287,6 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	function persist(goal: Goal): void {
 		const snapshot: GoalStateSnapshot = {
 			goal,
-			lastAccountedUsage: accounting.toSnapshot(goal) ?? null,
-			lastAccountedAtMs: accounting.getLastAccountedAtMs(),
 			consecutiveExecutionFailures: accounting.getConsecutiveExecutionFailures(),
 		};
 		pi.appendEntry(GOAL_STATE_ENTRY_TYPE, snapshot);
@@ -363,7 +358,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	const SUBCOMMANDS = ["show", "status", "clear", "pause", "resume"];
 
 	pi.registerCommand("goal", {
-		description: "/goal <objective> | show | clear | pause | resume",
+		description: "/goal [--tokens N] <objective> | show | clear | pause | resume",
 		getArgumentCompletions: (prefix: string) => {
 			const items = SUBCOMMANDS.filter((sub) => sub.startsWith(prefix)).map((sub) => ({
 				value: sub,
@@ -424,10 +419,9 @@ export default function goalExtension(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// Treat the rest as a new objective. Validate.
-			const objectiveError = validateObjective(trimmed);
-			if (objectiveError !== null) {
-				emit(objectiveError, "error");
+			const parsed = parseGoalCreation(trimmed);
+			if (!parsed.ok) {
+				emit(parsed.error, "error");
 				return;
 			}
 			if (currentGoal !== null) {
@@ -442,12 +436,18 @@ export default function goalExtension(pi: ExtensionAPI): void {
 					return;
 				}
 			}
-			const result = createGoalInternal({ objective: trimmed, tokenBudget: null });
+			const result = createGoalInternal({
+				objective: parsed.objective,
+				tokenBudget: parsed.tokenBudget,
+			});
 			if (!result.ok || !result.goal) {
 				emit(result.reason ?? "Failed to set goal.", "error");
 				return;
 			}
-			emit(`Goal set: ${trimmed}`, "info");
+			emit(
+				`Goal set: ${parsed.objective}${parsed.tokenBudget === null ? "" : ` (${parsed.tokenBudget} token budget)`}`,
+				"info",
+			);
 			// Inject the continuation prompt so the manager starts working
 			// toward the objective immediately (matching codex's
 			// `start_turn_if_idle` after goal creation).
@@ -580,16 +580,12 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		if (currentGoal === null) return;
 
 		const usage = formatUsageForDelta(message.usage);
-		const nowMs = message.timestamp;
+		const nowMs = Date.now();
 
 		await accounting.lock(() => {
-			// Seed baseline on the first post-start assistant turn.
-			if (accounting.toSnapshot(currentGoal!) === null) {
-				accounting.seedBaseline(usage, nowMs);
-			}
 			const snap = accounting.snapshot(usage, nowMs);
 			if (snap === null) return;
-			accounting.commit(snap, usage, nowMs);
+			accounting.commit(snap, nowMs);
 
 			// Update goal tokensUsed inline; do NOT mutate status here —
 			// budget-exhaustion is decided by comparing against the budget
@@ -752,14 +748,12 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		const restored = loadGoalState(ctx);
 		if (restored.state !== null && currentGoal === null) {
 			const goal = restored.state.goal;
-			const { latestAssistantUsage, latestAssistantAtMs } = loadResumeAnchor(ctx);
 			currentGoal = goal;
 			accounting.start({
 				statusActive: goal.status === "active",
 				tokensUsed: goal.tokensUsed,
 				timeUsedSeconds: goal.timeUsedSeconds,
-				lastAccountedUsage: latestAssistantUsage ?? restored.state.lastAccountedUsage,
-				lastAccountedAtMs: latestAssistantAtMs ?? restored.state.lastAccountedAtMs,
+				nowMs: Date.now(),
 			});
 			accounting.recordTurnToolOutcome({
 				hadSuccessfulTool: true,

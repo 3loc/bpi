@@ -164,7 +164,7 @@ export async function handleStatus(jobs: Map<string, Job>, backend: Backend, _ct
 				details: {},
 			};
 		}
-		const snap = await backend.status(job.id).catch(() => undefined);
+		const snap = await backend.status(job.id, job.scope).catch(() => undefined);
 		if (!snap) {
 			return {
 				content: [{ type: "text", text: `Job ${job.id} status unavailable (backend returned no data). The job may have been garbage-collected.` }],
@@ -220,7 +220,7 @@ export async function handleWait(jobs: Map<string, Job>, backend: Backend, _ctx:
 	const state = (params.state as JobState | undefined) ?? "completed";
 	const timeoutMs = params.timeoutMs ?? 24 * 60 * 60 * 1000;
 
-	let final = await backend.wait(job.id, state, timeoutMs);
+	let final = await backend.wait(job.id, state, timeoutMs, job.scope);
 	if (!final && isTerminal(job.state)) {
 		// systemd garbage-collects finished transient units; when the
 		// substrate no longer knows the job, the session's own record is
@@ -251,7 +251,7 @@ export async function handleCancel(jobs: Map<string, Job>, backend: Backend, _ct
 		throw new Error(`No job with id "${params.id}" in this session.`);
 	}
 	const signal = (params.signal === "SIGKILL" ? "SIGKILL" : "SIGTERM") as "SIGTERM" | "SIGKILL";
-	await backend.cancel(job.id, signal);
+	await backend.cancel(job.id, signal, job.scope);
 	// Mark cancelled immediately so subsequent status reads report the
 	// right reason; the watcher reconciles on its next tick.
 	job.state = "cancelled";
@@ -269,7 +269,7 @@ export async function handleJournal(jobs: Map<string, Job>, backend: Backend, _c
 	}
 	const limit = Math.min(Math.max(params.limit ?? 200, 1), 5_000);
 	const maxChars = Math.min(Math.max(params.maxChars ?? 8_000, 256), 50_000);
-	const chunk = await backend.journal(job.id, { limit, maxChars, since: params.since, until: params.until });
+	const chunk = await backend.journal(job.id, { limit, maxChars, since: params.since, until: params.until }, job.scope);
 	return {
 		content: [{ type: "text", text: chunk.lines.join("\n") || "(journal empty)" }],
 		details: { id: params.id, lines: chunk.lines.length, chars: chunk.totalChars },
