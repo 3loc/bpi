@@ -1,9 +1,9 @@
 # Provenance
 
-This repository is a 3LOC-maintained import/fork, imported into the 3LOC
-Forgejo organization as `bpi` (beckman-pi) on 2026-09-05 from a snapshot
-supplied by beckman. It is not marked as a Forgejo-native fork because
-the original repository was supplied as a Git archive from a private remote.
+This repository is a 3LOC-maintained import/fork, published as GitHub
+[`3loc/bpi`](https://github.com/3loc/bpi) on 2026-09-05 from a snapshot supplied
+by beckman. It is not marked as a GitHub-native fork because the original
+repository was supplied as a Git archive from a private remote.
 
 - Original repository name: `my-pi`
 - Imported tip: `32d9065dcca903a82ff51b7ce6f377a30de2def9`

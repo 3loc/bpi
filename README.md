@@ -5,9 +5,9 @@ beckman's [pi](https://pi.dev) extensions and skills, maintained by 3LOC as
 
 > [!NOTE]
 > **Fork status:** this is a 3LOC-maintained import/fork of beckman's original
-> `my-pi` repository. It is not a Forgejo-native fork because the source was
-> supplied as a Git archive from a private repository. The complete original
-> commit history and authorship are preserved.
+> `my-pi` repository. GitHub cannot mark it as a platform-native fork because
+> the source was supplied as a Git archive from a private repository. The
+> complete original commit history and authorship are preserved.
 
 See [`PROVENANCE.md`](PROVENANCE.md) for the import record and licensing
 status.
