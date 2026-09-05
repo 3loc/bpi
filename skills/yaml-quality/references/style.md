@@ -1,6 +1,6 @@
 # Repo style conventions
 
-Specific to this repo (`my-pi`). When contributing new YAML, follow
+Specific to this repo (`bpi`). When contributing new YAML, follow
 these unless you have a reason to deviate.
 
 ## Indentation

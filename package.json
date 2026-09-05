@@ -1,9 +1,9 @@
 {
-  "name": "my-pi",
+  "name": "bpi",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Personal pi extensions and skills: plan mode workflow, ddgs web search",
+  "description": "3LOC-maintained fork of beckman's pi extensions and skills",
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["./extensions"],

@@ -1,6 +1,16 @@
-# my-pi
+# bpi
 
-My personal [pi](https://pi.dev) extensions and skills, persisted as a pi package.
+beckman's [pi](https://pi.dev) extensions and skills, maintained by 3LOC as
+**bpi** and distributed as a pi package.
+
+> [!NOTE]
+> **Fork status:** this is a 3LOC-maintained import/fork of beckman's original
+> `my-pi` repository. It is not a Forgejo-native fork because the source was
+> supplied as a Git archive from a private repository. The complete original
+> commit history and authorship are preserved.
+
+See [`PROVENANCE.md`](PROVENANCE.md) for the import record and licensing
+status.
 
 ## Contents
 
@@ -46,7 +56,7 @@ project-local).
 Manual equivalent:
 
 ```bash
-pi install ~/src/my-pi
+pi install /path/to/bpi
 ```
 
 pi registers the repo **by reference, without copying**: this repository is
@@ -54,7 +64,7 @@ the single source of truth. Edits here are picked up by `/reload` or the
 next pi start. Verify with `pi list`, or fully with `./verify.sh`.
 
 The settings entry is a path **relative to the settings file's directory**
-(e.g. `"../../src/my-pi"`), resolved to the absolute repo path at every
+(e.g. `"../../src/bpi"`), resolved to the absolute repo path at every
 startup — a live link to wherever the repo sits on disk. If the repo is
 moved or re-cloned elsewhere, re-run `./install.sh` from the new location.
 See `AGENTS.md` for the full implications.

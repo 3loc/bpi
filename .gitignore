@@ -6,3 +6,6 @@ node_modules/
 # without being deleted. Re-homing them into git is a deliberate
 # decision, not an accident of an untracked file.
 git-ignore/
+
+# Local operational notes
+.archive/

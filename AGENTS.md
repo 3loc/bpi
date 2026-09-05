@@ -1,12 +1,12 @@
 # AGENTS.md — rules for working in this repository
 
-This repository (`my-pi`) is a **pi package**: it is the single source of
+This repository (`bpi`) is a **pi package**: it is the single source of
 truth for this machine's pi extensions and skills. It is registered in
 `~/.pi/agent/settings.json` under `packages` and loaded by reference.
 
 How the registration works: `pi install` (run by `./install.sh`) stores
 the repo as a path **relative to the settings file's directory**
-(`~/.pi/agent/`), e.g. `"../../src/my-pi"` — pi resolves it to the
+(`~/.pi/agent/`), e.g. `"../../src/bpi"` — pi resolves it to the
 absolute repo path at every startup. Nothing is copied; the settings
 entry is a live link to wherever the repo sits on disk. Consequences:
 
