@@ -16,6 +16,8 @@
 
 import { extractUnitName, isTerminal, parseShowOutput, type JobState, type StatusSnapshot } from "../state.ts";
 import type { Backend, BackendCapabilities, JournalChunk, JournalOptions, JobScope, LaunchRequest, LaunchResult } from "../backend.ts";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 
 /** Minimal subprocess contract — pi.exec in production, a recorder in
  *  tests. Mirrors the bits of pi.exec we actually use. */
@@ -53,6 +55,11 @@ export class SystemdBackend implements Backend {
 		else args.push("--user");
 		args.push("--working-directory=" + req.workingDirectory);
 		if (req.outputFile) {
+			// systemd opens StandardOutput before it starts the command and
+			// refuses the unit with 209/STDOUT when the parent directory is
+			// absent. outputFile=true points at a cache directory that need not
+			// exist on a fresh host, so create it before handing the path over.
+			await mkdir(path.dirname(req.outputFile), { recursive: true });
 			args.push("-p", `StandardOutput=file:${req.outputFile}`);
 			args.push("-p", `StandardError=inherit`);
 		}

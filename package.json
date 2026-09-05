@@ -1,6 +1,6 @@
 {
   "name": "bpi",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "3LOC-maintained fork of beckman's pi extensions and skills",
@@ -21,7 +21,7 @@
     "skills": ["./skills"]
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types extensions/ dev/tools-check/"
+    "test": "node --test --experimental-strip-types $(find extensions dev/tools-check -type f -name '*.test.ts' -print)"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",

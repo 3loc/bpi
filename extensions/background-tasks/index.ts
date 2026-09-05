@@ -24,7 +24,7 @@
  *        │             │
  *        │             │  completion / timeout
  *        ▼             ▼
- *   pi.sendMessage({ triggerTurn: true, deliverAs: "followUp" })
+ *   pi.sendMessage({ triggerTurn: true, deliverAs: fulfillment ? "steer" : "followUp" })
  *
  * Impossibility-scope: the watcher runs inside the pi process. When
  * pi exits the watcher dies; tasks continue under their backend but
@@ -62,6 +62,7 @@ import type { Backend } from "./backend.ts";
 import { SystemdBackend } from "./backends/systemd.ts";
 import { isTerminal, type Job } from "./state.ts";
 import { tick } from "./watcher.ts";
+import { completionDeliveryMode } from "./notification.ts";
 import {
 	CancelParamsSchema,
 	JournalParamsSchema,
@@ -194,7 +195,10 @@ export default function backgroundTasksExtension(pi: ExtensionAPI): void {
 					notify: job.notify,
 				},
 			},
-			{ triggerTurn: true, deliverAs: "followUp" },
+			{
+				triggerTurn: true,
+				deliverAs: completionDeliveryMode(job.notify),
+			},
 		);
 	}
 

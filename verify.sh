@@ -131,7 +131,7 @@ if command -v node >/dev/null 2>&1; then
 	node_major="$(node -p 'process.versions.node.split(".")[0]')"
 	node_minor="$(node -p 'process.versions.node.split(".")[1]')"
 	if (( node_major >= 23 )) || (( node_major == 22 && node_minor >= 6 )); then
-		mapfile -t test_files < <(find "$REPO_ROOT/extensions" \
+		mapfile -t test_files < <(find "$REPO_ROOT/extensions" "$REPO_ROOT/dev/tools-check" \
 			-type f -name '*.test.ts' | sort)
 		if [[ ${#test_files[@]} -eq 0 ]]; then
 			echo "FAIL: no .test.ts files found under extensions/" >&2
@@ -146,16 +146,16 @@ if command -v node >/dev/null 2>&1; then
 		if [[ ! -d "$REPO_ROOT/node_modules/typebox" ]]; then
 			echo "warn: node_modules/typebox missing — run 'npm install' in $REPO_ROOT to enable the test gate"
 		else
-			# node --test discovers *.test.ts files under the directory
-			# roots itself — same shape as `npm test`. New test files
-			# get picked up automatically; no list to maintain.
+			# Pass exact files: Node 26 no longer treats directory operands as
+			# recursive test roots. Discovery still comes from find, so new test
+			# files are covered without maintaining a list.
 			if (cd "$REPO_ROOT" && node --test --experimental-strip-types \
-					extensions/ dev/tools-check/) >/dev/null 2>&1; then
+					"${test_files[@]}") >/dev/null 2>&1; then
 				echo "ok: extension test gate passed (${#test_files[@]} files)"
 			else
 				echo "FAIL: extension tests failed — run 'npm test' for details" >&2
 				(cd "$REPO_ROOT" && node --test --experimental-strip-types \
-						extensions/ dev/tools-check/) >&2
+						"${test_files[@]}") >&2
 				exit 1
 			fi
 		fi

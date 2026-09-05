@@ -14,6 +14,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { SystemdBackend, type ExecFn, type ExecContext } from "./systemd.ts";
 
 function fakeExec(recorded: { cmd?: string; args?: string[]; stdout?: string; stderr?: string; code?: number }[]): ExecFn {
@@ -88,6 +91,23 @@ describe("SystemdBackend.launch", () => {
 		await b.launch({ command: "x", workingDirectory: "/", outputFile: "/tmp/job.log" });
 		assert.ok(captured.includes("StandardOutput=file:/tmp/job.log"), `got: ${captured.join(" ")}`);
 		assert.ok(captured.includes("StandardError=inherit"), `got: ${captured.join(" ")}`);
+	});
+
+	it("creates the output file's parent directory before systemd starts", async () => {
+		const temp = await mkdtemp(path.join(os.tmpdir(), "bpi-systemd-test-"));
+		const outputFile = path.join(temp, "missing", "nested", "job.log");
+		try {
+			const exec: ExecFn = async () => ({
+				code: 0,
+				stdout: "Running as unit: run-dir.service\n",
+				stderr: "",
+			});
+			const b = new SystemdBackend(exec, ctx);
+			await b.launch({ command: "x", workingDirectory: "/", outputFile });
+			assert.equal((await stat(path.dirname(outputFile))).isDirectory(), true);
+		} finally {
+			await rm(temp, { recursive: true, force: true });
+		}
 	});
 
 	it("joins -- and bash -c as the last args", async () => {

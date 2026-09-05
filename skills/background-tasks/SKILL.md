@@ -115,6 +115,10 @@ but not across sessions (a new session has no in-memory jobs).
 Returns immediately with `{id, label, scope, timeoutMs, outputFile, notify, nextStep}`.
 The id is the substrate's handle (a unit name for systemd).
 
+Fulfillment completions are delivered as steering messages so the agent sees
+the result before its current run settles. Watcher completions remain follow-up
+messages because they are intentionally independent of the request in flight.
+
 ## Two patterns: fulfillment vs watcher
 
 The same `background_run` tool covers two distinct mental modes.
